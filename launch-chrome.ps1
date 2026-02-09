@@ -105,16 +105,56 @@ Write-Log "INFO" ""
 # 檢查端口是否已被占用
 $portInUse = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
 if ($portInUse) {
-    Write-Log "WARN" "  ⚠️  端口 $Port 已被占用！" -Color Yellow
-    Write-Log "WARN" "  可能 Chrome Debug 模式已在運行。" -Color Yellow
+    # 檢查是否為我們自己的 debug Chrome
+    $ownerPid = ($portInUse | Where-Object { $_.State -eq 'Listen' } | Select-Object -First 1).OwningProcess
+    $isOurChrome = $false
+    if ($ownerPid) {
+        try {
+            $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$ownerPid" -ErrorAction SilentlyContinue
+            if ($proc -and $proc.CommandLine -match [regex]::Escape($profileDir)) {
+                $isOurChrome = $true
+            }
+        } catch { }
+    }
+
+    if ($isOurChrome) {
+        Write-Log "INFO" "  ✅ Chrome Debug 模式已在運行（PID: $ownerPid）" -Color Green
+        Write-Log "INFO" ""
+        Write-Log "INFO" "  驗證方式: 在瀏覽器中打開 http://localhost:${Port}/json/version" -Color Gray
+        Write-Log "INFO" ""
+        Write-Log "INFO" "  下一步：" -Color Cyan
+        Write-Log "INFO" "  1. 在 Chrome 中登入你的內部網站" -Color White
+        Write-Log "INFO" "  2. 開啟另一個 PowerShell 視窗" -Color White
+        Write-Log "INFO" "  3. 執行 npm run collect 開始蒐集素材" -Color White
+        Write-Log "INFO" ""
+        exit 0
+    }
+
+    Write-Log "WARN" "  ⚠️  端口 $Port 已被其他程式占用！" -Color Yellow
+    Write-LogOnly "WARN" "PortOwnerPID: $ownerPid"
     Write-Log "INFO" ""
-    Write-Log "INFO" "  驗證方式: 在瀏覽器中打開 http://localhost:${Port}/json/version" -Color Gray
+    Write-Log "INFO" "  這通常是因為有一般 Chrome 或其他程式佔用了端口 $Port。" -Color Yellow
+    Write-Log "INFO" "  建議先關閉所有 Chrome 視窗，再重新執行此腳本。" -Color Yellow
     Write-Log "INFO" ""
 
-    $continue = Read-Host "  是否仍要嘗試啟動？(y/N)"
+    $continue = Read-Host "  是否要強制關閉佔用端口的程式並重新啟動？(y/N)"
     Write-LogOnly "INFO" "UserContinue: $continue"
     if ($continue -ne 'y' -and $continue -ne 'Y') {
         exit 0
+    }
+
+    # 強制關閉佔用端口的程式
+    if ($ownerPid) {
+        Write-Log "INFO" "  正在關閉佔用端口的程式 (PID: $ownerPid)..." -Color Yellow
+        try {
+            Stop-Process -Id $ownerPid -Force -ErrorAction Stop
+            Start-Sleep -Seconds 2
+            Write-Log "INFO" "  ✅ 已關閉 PID $ownerPid" -Color Green
+        } catch {
+            Write-Log "ERROR" "  ❌ 無法關閉程式 (PID: $ownerPid): $($_.Exception.Message)" -Color Red
+            Write-LogOnly "ERROR" $_.Exception.Message
+            exit 1
+        }
     }
 }
 
@@ -139,6 +179,17 @@ try {
     Write-Log "INFO" ""
     Write-Log "INFO" "  ✅ Chrome Debug 模式已成功啟動！" -Color Green
     Write-Log "INFO" "  瀏覽器版本: $($response.Browser)" -Color Gray
+    Write-LogOnly "INFO" "webSocketDebuggerUrl: $($response.webSocketDebuggerUrl)"
+
+    # 記錄所有已開啟的頁面（方便 debug）
+    try {
+        $pages = Invoke-RestMethod -Uri "http://localhost:${Port}/json/list" -TimeoutSec 5
+        Write-LogOnly "INFO" "CDP pages count: $($pages.Count)"
+        foreach ($pg in $pages) {
+            Write-LogOnly "INFO" "  CDP page: type=$($pg.type) title=$($pg.title) url=$($pg.url)"
+        }
+    } catch { }
+
     Write-Log "INFO" ""
     Write-Log "INFO" "  下一步：" -Color Cyan
     Write-Log "INFO" "  1. 在 Chrome 中登入你的內部網站" -Color White

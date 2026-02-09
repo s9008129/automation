@@ -19,7 +19,7 @@
  * 目標環境：Windows 11 + PowerShell 7.x（也支援 macOS / Linux）
  */
 
-import { chromium, Browser, Page, Frame, BrowserContext } from 'playwright';
+import { chromium, Browser, Page, Frame } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
@@ -336,12 +336,15 @@ function loadConfig(configPath: string): CollectConfig {
     process.exit(1);
   }
 
-  config.collectOptions = {
+  const defaults = {
     ariaSnapshot: true,
     screenshot: true,
     codegenRecording: true,
     htmlSource: false,
     iframeDepth: 3,
+  };
+  config.collectOptions = {
+    ...defaults,
     ...(config.collectOptions || {}),
   };
 
@@ -421,6 +424,19 @@ class MaterialCollector {
     try {
       this.browser = await chromium.connectOverCDP(endpoint);
       log('✅', '已成功連接到 Chrome');
+
+      // 記錄所有已開啟頁面的詳細資訊（方便 debug）
+      const contexts = this.browser.contexts();
+      writeLogLine(`[${getTaipeiISO()}][INFO] 瀏覽器上下文數量: ${contexts.length}`);
+      for (let ci = 0; ci < contexts.length; ci++) {
+        const pages = contexts[ci].pages();
+        writeLogLine(`[${getTaipeiISO()}][INFO] context[${ci}] 頁面數量: ${pages.length}`);
+        for (let pi = 0; pi < pages.length; pi++) {
+          const p = pages[pi];
+          const isUser = this.isUserPage(p);
+          writeLogLine(`[${getTaipeiISO()}][INFO]   page[${pi}]: url=${p.url()} isUserPage=${isUser}`);
+        }
+      }
     } catch (error) {
       logError('無法連接到 Chrome Debug 模式', error);
       const guidance = [
@@ -455,7 +471,19 @@ class MaterialCollector {
     }
   }
 
-  /** 取得當前活動頁面 */
+  /** 判斷是否為使用者可見頁面（排除 Chrome 內部頁面） */
+  private isUserPage(page: Page): boolean {
+    const url = page.url();
+    if (!url) return false;
+    // 排除所有 Chrome 內部頁面
+    if (url.startsWith('chrome://')) return false;
+    if (url.startsWith('chrome-extension://')) return false;
+    if (url.startsWith('devtools://')) return false;
+    if (url === 'about:blank') return false;
+    return true;
+  }
+
+  /** 取得當前活動頁面（優先選擇使用者可見的 http/https 頁面） */
   private getActivePage(): Page {
     if (!this.browser) {
       throw new Error('尚未連接到 Chrome');
@@ -464,23 +492,32 @@ class MaterialCollector {
     if (contexts.length === 0) {
       throw new Error('沒有找到瀏覽器上下文');
     }
-    const pages = contexts[0].pages();
-    if (pages.length === 0) {
+
+    // 搜尋所有 context 的所有頁面
+    const allPages: Page[] = [];
+    for (const ctx of contexts) {
+      allPages.push(...ctx.pages());
+    }
+
+    if (allPages.length === 0) {
       throw new Error('沒有找到任何頁面');
     }
-    return pages[pages.length - 1];
-  }
 
-  /** 取得瀏覽器上下文 */
-  private getContext(): BrowserContext {
-    if (!this.browser) {
-      throw new Error('尚未連接到 Chrome');
+    // 優先選擇使用者可見的頁面（非 chrome:// 內部頁面）
+    const userPages = allPages.filter(p => this.isUserPage(p));
+
+    if (userPages.length > 0) {
+      const selected = userPages[userPages.length - 1];
+      writeLogLine(`[${getTaipeiISO()}][INFO] getActivePage: 選擇使用者頁面 (${userPages.length} 個可用): ${selected.url()}`);
+      return selected;
     }
-    const contexts = this.browser.contexts();
-    if (contexts.length === 0) {
-      throw new Error('沒有找到瀏覽器上下文');
-    }
-    return contexts[0];
+
+    // 全部都是內部頁面，退而求其次選最後一個
+    log('⚠️', `所有 ${allPages.length} 個頁面都是 Chrome 內部頁面，請先在 Chrome 中打開你的目標網站`, 'WARN');
+    allPages.forEach((p, i) => {
+      writeLogLine(`[${getTaipeiISO()}][WARN]   page[${i}]: ${p.url()}`);
+    });
+    return allPages[allPages.length - 1];
   }
 
   // ── ARIA 快照蒐集 ──
@@ -963,15 +1000,12 @@ class MaterialCollector {
     this.initOutputDirs();
     await this.connect();
 
-    const context = this.getContext();
-    const pages = context.pages();
-
     try {
       for (let i = 0; i < this.config.pages.length; i++) {
         const target = this.config.pages[i];
         log('📄', `[${i + 1}/${this.config.pages.length}] 處理頁面: ${target.description}`);
 
-        const page = pages[0];
+        const page = this.getActivePage();
 
         try {
           await page.goto(target.url, {
