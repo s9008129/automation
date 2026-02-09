@@ -433,8 +433,9 @@ class MaterialCollector {
         writeLogLine(`[${getTaipeiISO()}][INFO] context[${ci}] 頁面數量: ${pages.length}`);
         for (let pi = 0; pi < pages.length; pi++) {
           const p = pages[pi];
-          const isUser = this.isUserPage(p);
-          writeLogLine(`[${getTaipeiISO()}][INFO]   page[${pi}]: url=${p.url()} isUserPage=${isUser}`);
+          const realUrl = await this.resolvePageUrl(p);
+          const isUser = this.isUserPageByUrl(realUrl);
+          writeLogLine(`[${getTaipeiISO()}][INFO]   page[${pi}]: syncUrl=${p.url()} realUrl=${realUrl} isUserPage=${isUser}`);
         }
       }
     } catch (error) {
@@ -471,20 +472,74 @@ class MaterialCollector {
     }
   }
 
+  /** 取得頁面的真實 URL（解決 CDP connectOverCDP 後 page.url() 返回空字串的問題） */
+  private async resolvePageUrl(page: Page): Promise<string> {
+    const syncUrl = page.url();
+    // 如果 page.url() 已經有值且不是空的，直接使用
+    if (syncUrl && syncUrl !== '') {
+      return syncUrl;
+    }
+    // CDP connectOverCDP 連接已存在的頁面時，page.url() 可能返回空字串
+    // page.evaluate() 也可能 hang，但 CDPSession.send('Runtime.evaluate') 可以正常工作
+    try {
+      const context = page.context();
+      const session = await context.newCDPSession(page);
+      try {
+        const { result } = await session.send('Runtime.evaluate', {
+          expression: 'location.href',
+          returnByValue: true,
+        });
+        return (result.value as string) || syncUrl;
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch {
+      return syncUrl;
+    }
+  }
+
+  /** 取得頁面的真實標題（解決 CDP 頁面 page.title() hang 的問題） */
+  private async resolvePageTitle(page: Page): Promise<string> {
+    // 先嘗試 page.title()（對正常頁面效率最高）
+    try {
+      const title = await Promise.race([
+        page.title(),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
+      return title;
+    } catch {
+      // page.title() 超時，使用 CDP session
+    }
+    try {
+      const context = page.context();
+      const session = await context.newCDPSession(page);
+      try {
+        const { result } = await session.send('Runtime.evaluate', {
+          expression: 'document.title',
+          returnByValue: true,
+        });
+        return (result.value as string) || '';
+      } finally {
+        await session.detach().catch(() => {});
+      }
+    } catch {
+      return '';
+    }
+  }
+
   /** 判斷是否為使用者可見頁面（排除 Chrome 內部頁面） */
-  private isUserPage(page: Page): boolean {
-    const url = page.url();
-    if (!url) return false;
-    // 排除所有 Chrome 內部頁面
+  private isUserPageByUrl(url: string): boolean {
+    if (!url || url === '') return false;
     if (url.startsWith('chrome://')) return false;
     if (url.startsWith('chrome-extension://')) return false;
+    if (url.startsWith('chrome-untrusted://')) return false;
     if (url.startsWith('devtools://')) return false;
     if (url === 'about:blank') return false;
     return true;
   }
 
   /** 取得當前活動頁面（優先選擇使用者可見的 http/https 頁面） */
-  private getActivePage(): Page {
+  private async getActivePage(): Promise<Page> {
     if (!this.browser) {
       throw new Error('尚未連接到 Chrome');
     }
@@ -503,20 +558,47 @@ class MaterialCollector {
       throw new Error('沒有找到任何頁面');
     }
 
-    // 優先選擇使用者可見的頁面（非 chrome:// 內部頁面）
-    const userPages = allPages.filter(p => this.isUserPage(p));
+    // 解析每個頁面的真實 URL，找出使用者可見的頁面
+    const pageInfos: { page: Page; url: string; isUser: boolean }[] = [];
+    for (const p of allPages) {
+      const url = await this.resolvePageUrl(p);
+      const isUser = this.isUserPageByUrl(url);
+      pageInfos.push({ page: p, url, isUser });
+    }
+
+    writeLogLine(`[${getTaipeiISO()}][INFO] getActivePage: 共 ${pageInfos.length} 個頁面`);
+    pageInfos.forEach((info, i) => {
+      writeLogLine(`[${getTaipeiISO()}][INFO]   page[${i}]: url=${info.url} isUserPage=${info.isUser}`);
+    });
+
+    const userPages = pageInfos.filter(info => info.isUser);
 
     if (userPages.length > 0) {
       const selected = userPages[userPages.length - 1];
-      writeLogLine(`[${getTaipeiISO()}][INFO] getActivePage: 選擇使用者頁面 (${userPages.length} 個可用): ${selected.url()}`);
-      return selected;
+      log('📄', `已選擇頁面: ${selected.url}`);
+
+      // 檢查 Page 對象是否可用（CDP 預存頁面的 page.url() 為空 → 不可用）
+      if (selected.page.url() === '' || selected.page.url() === 'about:blank') {
+        log('🔄', `頁面需要重新附加（CDP 預存頁面），正在開啟新分頁...`);
+        writeLogLine(`[${getTaipeiISO()}][INFO] 偵測到 CDP 預存頁面 (page.url()="${selected.page.url()}")，使用 newPage + goto 重新附加`);
+        try {
+          const context = this.browser!.contexts()[0];
+          const newPage = await context.newPage();
+          await newPage.goto(selected.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          log('✅', `已重新附加到: ${newPage.url()}`);
+          return newPage;
+        } catch (error) {
+          const detail = formatError(error);
+          logError(`重新附加失敗: ${detail.message}`, error);
+          return selected.page;
+        }
+      }
+
+      return selected.page;
     }
 
-    // 全部都是內部頁面，退而求其次選最後一個
+    // 全部都是內部頁面
     log('⚠️', `所有 ${allPages.length} 個頁面都是 Chrome 內部頁面，請先在 Chrome 中打開你的目標網站`, 'WARN');
-    allPages.forEach((p, i) => {
-      writeLogLine(`[${getTaipeiISO()}][WARN]   page[${i}]: ${p.url()}`);
-    });
     return allPages[allPages.length - 1];
   }
 
@@ -525,8 +607,8 @@ class MaterialCollector {
   /** 擷取頁面的 ARIA 快照（含 iframe 遞迴） */
   async captureAriaSnapshot(page: Page, pageName: string, description: string): Promise<string> {
     log('📸', `擷取 ARIA 快照: ${description}`);
-    const url = page.url();
-    const title = await page.title();
+    const url = await this.resolvePageUrl(page);
+    const title = await this.resolvePageTitle(page);
 
     const sections: string[] = [
       `# ARIA 快照: ${description}`,
@@ -824,8 +906,8 @@ class MaterialCollector {
 
     const pageMeta: PageMetadata = {
       name: target.name,
-      url: page.url(),
-      title: await page.title(),
+      url: await this.resolvePageUrl(page),
+      title: await this.resolvePageTitle(page),
       description: target.description,
       collectedAt: getTaipeiISO(),
       files: {},
@@ -1005,7 +1087,7 @@ class MaterialCollector {
         const target = this.config.pages[i];
         log('📄', `[${i + 1}/${this.config.pages.length}] 處理頁面: ${target.description}`);
 
-        const page = this.getActivePage();
+        const page = await this.getActivePage();
 
         try {
           await page.goto(target.url, {
@@ -1071,9 +1153,9 @@ class MaterialCollector {
         console.log(`  +---------------------------------------+`);
         console.log('');
 
-        const page = this.getActivePage();
-        const currentUrl = page.url();
-        const currentTitle = await page.title();
+        const page = await this.getActivePage();
+        const currentUrl = await this.resolvePageUrl(page);
+        const currentTitle = await this.resolvePageTitle(page);
 
         log('📄', `當前頁面: ${currentTitle}`);
         log('🔗', `URL: ${currentUrl}`);
@@ -1143,9 +1225,9 @@ class MaterialCollector {
     await this.connect();
 
     try {
-      const page = this.getActivePage();
-      const currentUrl = page.url();
-      const currentTitle = await page.title();
+      const page = await this.getActivePage();
+      const currentUrl = await this.resolvePageUrl(page);
+      const currentTitle = await this.resolvePageTitle(page);
 
       log('📄', `當前頁面: ${currentTitle}`);
       log('🔗', `URL: ${currentUrl}`);
