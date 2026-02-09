@@ -1,0 +1,44 @@
+{
+  "projectName": "my-intranet-automation",
+  "description": "內部網路網頁自動化素材蒐集設定（請修改為你的實際系統名稱和網址）",
+  "cdpPort": 9222,
+  "outputDir": "./materials",
+  "collectOptions": {
+    "ariaSnapshot": true,
+    "screenshot": true,
+    "codegenRecording": true,
+    "htmlSource": false,
+    "iframeDepth": 3
+  },
+  "pages": [
+    {
+      "name": "01-login-page",
+      "url": "http://your-internal-site/login",
+      "description": "登入頁面（請修改為你的實際網址）",
+      "waitFor": "networkidle",
+      "actions": []
+    },
+    {
+      "name": "02-dashboard",
+      "url": "http://your-internal-site/dashboard",
+      "description": "首頁儀表板（請修改為你的實際網址）",
+      "waitFor": "networkidle",
+      "actions": []
+    },
+    {
+      "name": "03-form-page",
+      "url": "http://your-internal-site/form",
+      "description": "表單頁面（請修改為你的實際網址）",
+      "waitFor": "networkidle",
+      "actions": []
+    }
+  ],
+  "interactiveFlows": [
+    {
+      "name": "login-flow",
+      "description": "登入流程錄製",
+      "startUrl": "http://your-internal-site/login",
+      "instructions": "請在瀏覽器中操作登入流程，完成後按 Ctrl+C 結束錄製"
+    }
+  ]
+}

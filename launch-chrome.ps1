@@ -1,0 +1,158 @@
+<#
+.SYNOPSIS
+    啟動 Chrome Debug 模式（素材蒐集必備）
+
+.DESCRIPTION
+    這個腳本會啟動 Chrome 瀏覽器的 Debug 模式，讓素材蒐集工具可以連接到 Chrome。
+    Chrome 會使用獨立的使用者設定檔，不會影響你平常使用的 Chrome。
+
+.NOTES
+    - 執行前請先關閉所有正在運行的 Chrome 視窗
+    - 啟動後可以在 Chrome 中正常瀏覽網頁、登入系統
+    - 素材蒐集工具會「看到」你在 Chrome 中看到的內容
+
+.EXAMPLE
+    .\launch-chrome.ps1
+    .\launch-chrome.ps1 -Port 9223
+#>
+
+param(
+    [int]$Port = 9222
+)
+
+$ErrorActionPreference = "Stop"
+
+$LogDir = Join-Path $PSScriptRoot "logs"
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+$LogFile = Join-Path $LogDir ("launch-chrome-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
+
+function Write-Log {
+    param(
+        [string]$Level,
+        [string]$Message,
+        [ConsoleColor]$Color = [ConsoleColor]::Gray
+    )
+    if ($Message -eq '') {
+        Add-Content -Path $LogFile -Value ''
+        Write-Host ''
+        return
+    }
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $line = "[{0}][{1}] {2}" -f $timestamp, $Level.ToUpper(), $Message
+    Add-Content -Path $LogFile -Value $line
+    Write-Host $Message -ForegroundColor $Color
+}
+
+function Write-LogOnly {
+    param(
+        [string]$Level,
+        [string]$Message
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $line = "[{0}][{1}] {2}" -f $timestamp, $Level.ToUpper(), $Message
+    Add-Content -Path $LogFile -Value $line
+}
+
+Write-LogOnly "INFO" "Script: $PSCommandPath"
+Write-LogOnly "INFO" "PowerShell: $($PSVersionTable.PSVersion)"
+Write-LogOnly "INFO" "OS: $([System.Environment]::OSVersion.VersionString)"
+Write-LogOnly "INFO" "User: $env:USERNAME"
+Write-LogOnly "INFO" "CWD: $PWD"
+Write-LogOnly "INFO" "Port: $Port"
+Write-LogOnly "INFO" "LogFile: $LogFile"
+
+# Chrome 常見安裝路徑
+$chromePaths = @(
+    "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+    "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+    "${env:LOCALAPPDATA}\Google\Chrome\Application\chrome.exe"
+)
+
+$chromeExe = $null
+foreach ($p in $chromePaths) {
+    if (Test-Path $p) {
+        $chromeExe = $p
+        break
+    }
+}
+
+if (-not $chromeExe) {
+    Write-Log "INFO" ""
+    Write-Log "ERROR" "  ❌ 找不到 Google Chrome！" -Color Red
+    Write-Log "INFO" ""
+    Write-Log "INFO" "  請確認 Chrome 已安裝在以下路徑之一：" -Color Yellow
+    foreach ($p in $chromePaths) {
+        Write-Log "INFO" "    - $p" -Color Gray
+    }
+    Write-Log "INFO" ""
+    exit 1
+}
+
+# 建立獨立的使用者設定目錄
+$profileDir = Join-Path $PSScriptRoot "chrome-debug-profile"
+
+Write-Log "INFO" ""
+Write-Log "INFO" "  ========================================" -Color Cyan
+Write-Log "INFO" "  🚀 啟動 Chrome Debug 模式" -Color Cyan
+Write-Log "INFO" "  ========================================" -Color Cyan
+Write-Log "INFO" ""
+Write-Log "INFO" "  🧾 啟動日誌: $LogFile" -Color Gray
+Write-Log "INFO" "  Chrome 路徑: $chromeExe" -Color Gray
+Write-Log "INFO" "  Debug 端口:  $Port" -Color Gray
+Write-Log "INFO" "  設定目錄:    $profileDir" -Color Gray
+Write-Log "INFO" ""
+
+# 檢查端口是否已被占用
+$portInUse = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
+if ($portInUse) {
+    Write-Log "WARN" "  ⚠️  端口 $Port 已被占用！" -Color Yellow
+    Write-Log "WARN" "  可能 Chrome Debug 模式已在運行。" -Color Yellow
+    Write-Log "INFO" ""
+    Write-Log "INFO" "  驗證方式: 在瀏覽器中打開 http://localhost:${Port}/json/version" -Color Gray
+    Write-Log "INFO" ""
+
+    $continue = Read-Host "  是否仍要嘗試啟動？(y/N)"
+    Write-LogOnly "INFO" "UserContinue: $continue"
+    if ($continue -ne 'y' -and $continue -ne 'Y') {
+        exit 0
+    }
+}
+
+Write-Log "INFO" "  正在啟動 Chrome..." -Color Green
+Write-Log "INFO" ""
+
+# 啟動 Chrome
+Start-Process -FilePath $chromeExe -ArgumentList @(
+    "--remote-debugging-port=$Port",
+    "--user-data-dir=$profileDir",
+    "--no-first-run",
+    "--no-default-browser-check"
+)
+
+# 等待 Chrome 啟動
+Start-Sleep -Seconds 3
+
+# 驗證
+Write-Log "INFO" "  驗證 Chrome Debug 模式..." -Color Gray
+try {
+    $response = Invoke-RestMethod -Uri "http://localhost:${Port}/json/version" -TimeoutSec 5
+    Write-Log "INFO" ""
+    Write-Log "INFO" "  ✅ Chrome Debug 模式已成功啟動！" -Color Green
+    Write-Log "INFO" "  瀏覽器版本: $($response.Browser)" -Color Gray
+    Write-Log "INFO" ""
+    Write-Log "INFO" "  下一步：" -Color Cyan
+    Write-Log "INFO" "  1. 在 Chrome 中登入你的內部網站" -Color White
+    Write-Log "INFO" "  2. 開啟另一個 PowerShell 視窗" -Color White
+    Write-Log "INFO" "  3. 執行 npm run collect 開始蒐集素材" -Color White
+    Write-Log "INFO" ""
+} catch {
+    Write-LogOnly "ERROR" $_.Exception.Message
+    if ($_.ScriptStackTrace) {
+        Write-LogOnly "ERROR" $_.ScriptStackTrace
+    }
+    Write-Log "INFO" ""
+    Write-Log "WARN" "  ⚠️  Chrome 已啟動但尚未準備好。" -Color Yellow
+    Write-Log "WARN" "  請稍等幾秒後，在瀏覽器中打開以下網址確認：" -Color Yellow
+    Write-Log "INFO" "  http://localhost:${Port}/json/version" -Color Cyan
+    Write-Log "INFO" ""
+}

@@ -1,0 +1,30 @@
+{
+  "name": "web-material-collector",
+  "version": "1.0.0",
+  "description": "內部網路網頁素材離線蒐集工具 — 完全離線運作，不需要網際網路",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "collect": "npx tsx collect-materials.ts",
+    "collect:auto": "npx tsx collect-materials.ts --auto",
+    "collect:snapshot": "npx tsx collect-materials.ts --snapshot",
+    "collect:record": "npx tsx collect-materials.ts --record"
+  },
+  "keywords": [
+    "automation",
+    "playwright",
+    "offline",
+    "material-collector"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.3"
+  }
+}

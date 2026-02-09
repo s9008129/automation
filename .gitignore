@@ -1,0 +1,8 @@
+node_modules/
+dist/
+materials/
+chrome-debug-profile/
+logs/
+*.js
+*.d.ts
+*.js.map
