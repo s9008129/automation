@@ -211,6 +211,16 @@ function formatError(error: unknown): { message: string; stack?: string } {
   return { message: String(error) };
 }
 
+function quoteCmdArg(value: string): string {
+  if (value === '') return '""';
+  if (!/[ \t"]/g.test(value)) return value;
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function buildWindowsCommand(command: string, args: string[]): string {
+  return [command, ...args.map(quoteCmdArg)].join(' ');
+}
+
 function log(emoji: string, message: string, level: 'INFO' | 'WARN' | 'ERROR' = 'INFO'): void {
   const time = getTaipeiTime();
   console.log(`[${time}] ${emoji} ${message}`);
@@ -883,12 +893,16 @@ class MaterialCollector {
       try {
         validatedUrl = validateUrl(startUrl);
       } catch (error) {
-        log('❌', (error as Error).message);
+        logError((error as Error).message, error);
+        this.metadata.errors.push({
+          page: `codegen:${flowName}`,
+          error: `Invalid URL: ${(error as Error).message}`,
+          timestamp: getTaipeiISO(),
+          stack: (error as Error).stack,
+        });
         return '';
       }
 
-      // Windows 需要使用 npx.cmd
-      const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
       const codegenArgs = [
         'playwright', 'codegen',
         '--target', 'javascript',
@@ -896,13 +910,28 @@ class MaterialCollector {
         validatedUrl,
       ];
 
-      const codegenProcess = spawn(npxCmd, codegenArgs, {
-        stdio: 'inherit',
-      });
+      const spawnOptions = { stdio: 'inherit' as const };
+      let codegenProcess: ReturnType<typeof spawn>;
+      if (process.platform === 'win32') {
+        const cmd = process.env.ComSpec || 'cmd.exe';
+        const commandLine = buildWindowsCommand('npx', codegenArgs);
+        writeLogContext('codegenCommand', { command: cmd, args: ['/d', '/s', '/c', commandLine], commandLine });
+        codegenProcess = spawn(cmd, ['/d', '/s', '/c', commandLine], {
+          ...spawnOptions,
+          windowsVerbatimArguments: true,
+        });
+      } else {
+        writeLogContext('codegenCommand', { command: 'npx', args: codegenArgs });
+        codegenProcess = spawn('npx', codegenArgs, spawnOptions);
+      }
 
       await new Promise<void>((resolve, reject) => {
-        codegenProcess.on('close', () => {
-          resolve();
+        codegenProcess.on('close', (code: number | null) => {
+          if (code && code !== 0) {
+            reject(new Error(`Playwright Codegen 結束碼: ${code}`));
+          } else {
+            resolve();
+          }
         });
         codegenProcess.on('error', reject);
       });
@@ -917,6 +946,12 @@ class MaterialCollector {
     } catch (error) {
       const detail = formatError(error);
       logError(`錄製失敗: ${detail.message}`, error);
+      this.metadata.errors.push({
+        page: `codegen:${flowName}`,
+        error: `Codegen failed: ${detail.message}`,
+        timestamp: getTaipeiISO(),
+        stack: detail.stack,
+      });
       return '';
     }
   }
