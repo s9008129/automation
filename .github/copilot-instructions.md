@@ -119,9 +119,11 @@ AI（CTO）執行：實作 → 驗證 → 交付
 
 ### 1. CDP 連接原則（Non-Negotiable）
 
-- **NEVER 呼叫 `browser.close()`**：使用 `connectOverCDP` 時，關閉瀏覽器會影響使用者正在操作的 Chrome
-- **只斷開連接，不關閉 Chrome**：`disconnect()` 時只設 `this.browser = null`
-- **過濾 Chrome 內部頁面**：`chrome://`、`chrome-extension://`、`devtools://`、`about:blank` 都不是使用者可見頁面
+- **CDP 連線與資源釋放（精準說明）**：當使用 Playwright 的 `connectOverCDP()` 附加到已存在的使用者 Chrome 時，應以釋放 Playwright 連線為目標，但避免強制關閉使用者的 Chrome。
+  - 若 Playwright 是以 `connectOverCDP()` 附加到外部 Chrome，呼叫 `browser.close()` 會使 Playwright 與 Chrome 的 CDP 連線中斷（釋放 WebSocket），通常**不會強制關閉使用者的 Chrome 進程**，因此在此情境下可安全呼叫 `browser.close()`（建議包在 try/catch 以忽略斷線時的例外）。
+  - 若 Playwright 是以 `playwright.launch()` 啟動的瀏覽器，呼叫 `browser.close()` 則會關閉該瀏覽器進程，因此僅在確定由 Playwright 管理的瀏覽器上調用 `close()`。
+- **絕對不要在不確定情況下無條件關閉使用者的互動性 Chrome**，以避免中斷使用者工作流程。
+- **過濾 Chrome 內部頁面**：`chrome://`、`chrome-extension://`、`devtools://`、`about:blank` 等非使用者內容必須過濾，不應視為 user page。
 
 ### 2. 離線優先原則
 
@@ -151,6 +153,17 @@ AI（CTO）執行：實作 → 驗證 → 交付
 - 檔名 MUST 經過 `safeFileName()` 處理（防止路徑穿越）
 - URL MUST 經過 `validateUrl()` 驗證（只允許 http/https/about）
 - 不記錄使用者密碼到日誌
+- **機敏資料處理（非功能但必須遵守）**：禁止在原始碼、錄製檔（materials/recordings）或 commit 歷史中出現明文敏感資訊（帳號、密碼、API keys、tokens）。所有機敏資料必須透過環境變數提供（例如 `NCERT_USERNAME` / `NCERT_PASSWORD`），或由安全的密鑰管理機制注入到執行環境。
+- **.env 使用規範**：若在開發環境使用 `.env` 檔案，**務必**將 `.env` 加入 `.gitignore`，且僅在本地載入（建議使用 `dotenv` 在 developer 環境載入，production 不應使用 `.env` 作為唯一的密鑰存放方式）。
+- **建議範例**（TypeScript）：
+```typescript
+const username = process.env.NCERT_USERNAME ?? '';
+const password = process.env.NCERT_PASSWORD ?? '';
+if (!username || !password) {
+  throw new Error('請設定 NCERT_USERNAME 與 NCERT_PASSWORD');
+}
+```
+- **錄製檔審查**：在提交錄製腳本（materials/recordings）前必須執行敏感資訊掃描（自動化 pre-commit hook 建議），將偵測到的明文替換為 `process.env` 或安全占位符。
 
 ---
 
