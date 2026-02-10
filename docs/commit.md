@@ -598,3 +598,28 @@ scripts/
 - 驗證：在 Node v25 環境下執行 `npm run start:chrome` 不會再因 Illegal return 而崩潰；如系統為非 Windows，會執行 scripts/launch-chrome.sh。
 
 ---
+
+### fix(scripts): 改進 sanitizeRecording（錄製檔敏感資訊清理）
+
+## 意圖與情境
+- 問題：錄製檔中仍有機會出現字面量的帳號/密碼（例如 `.fill('NCERT_USERNAME')`），原因在於早期的 sanitizeRecording 只處理 `.fill(selector, 'value')` 的雙參形式，未處理鏈式呼叫的單參 `.fill('value')` 或 `page.getByRole(...).fill('value')`，且會誤改註解中的示範程式碼。
+- 目標：以最小侵入性改進 sanitizeRecording，確保：
+  1. 可處理單參與雙參的 `.fill()` / `.type()` 呼叫
+  2. 根據上下文（如 getByRole 的 name 為「帳號」或「密碼」）將帳號替換為 `process.env.NCERT_USERNAME`（字面佔位符），密碼替換為 `process.env.RECORDING_PASSWORD`（字面佔位符）
+  3. 保護註解與 block comment，避免誤改
+
+## 執行內容
+- 修改：`collect-materials.ts`
+  - 將 sanitizeRecording 改為逐行處理，跳過單行註解與 block comment，並加入多種 regex 覆蓋案例：雙參 `.fill(selector, '...')`，getByRole 單參 `.fill('...')`（區分帳號/密碼），locator 包含 password 的 selector，以及最後的單參降級處理。
+- 修改：`materials/recordings/m-report-download.ts`
+  - 將錄製檔中的字面量替換為環境變數佔位符：
+    - 帳號: `process.env.NCERT_USERNAME`
+    - 密碼: `process.env.RECORDING_PASSWORD`
+
+## 決策理由
+- 優先兼容現有文件與環境變數命名（保留 NCERT_* 命名以兼容既有說明），而將錄製檔內的密碼欄位統一使用 `process.env.RECORDING_PASSWORD` 作為執行時佔位符，避免在 sanitize 時寫入實際密碼。
+
+## 執行結果
+- 驗證：在本機執行文字檢索與簡易測試後，`materials/recordings/m-report-download.ts` 不含明文密碼或帳號；sanitizeRecording 在樣本輸入上的行為符合規範（保持註解、不重寫 process.env 佔位符）。
+
+---

@@ -1092,16 +1092,53 @@ class MaterialCollector {
   /** 清理錄製檔中的敏感資訊（密碼等） */
   private sanitizeRecording(filePath: string): void {
     let content = fs.readFileSync(filePath, 'utf-8');
-    // 將錄製檔中 page.fill / page.type 的字串密碼替換為字面量的 process.env 佔位符
-    // 注意：此處不會將 process.env 的實際值寫回檔案，避免明碼入庫
-    content = content.replace(
-      /\.fill\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g,
-      `.fill($1, process.env.RECORDING_PASSWORD)`
-    );
-    content = content.replace(
-      /\.type\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g,
-      `.type($1, process.env.RECORDING_PASSWORD)`
-    );
+
+    // 為避免誤修改註解或 block comment，採行逐行處理並保留 block comments
+    const lines = content.split(/\r?\n/);
+    let inBlock = false;
+    const outLines: string[] = [];
+
+    for (let rawLine of lines) {
+      let line = rawLine;
+
+      // 處理 block comment 範圍（不在此段進行替換）
+      if (inBlock) {
+        outLines.push(line);
+        if (line.includes('*/')) inBlock = false;
+        continue;
+      }
+      if (line.includes('/*')) {
+        inBlock = true;
+        outLines.push(line);
+        continue;
+      }
+
+      // 若為單行註解也跳過
+      if (line.trim().startsWith('//')) {
+        outLines.push(line);
+        continue;
+      }
+
+      // 依序進行安全的替換（從較具體到較泛的 pattern）
+      // 1) 有 selector 的形式：.fill(selector, 'secret') 或 .type(selector, 'secret')
+      line = line.replace(/\.fill\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g, `.fill($1, process.env.RECORDING_PASSWORD)`);
+      line = line.replace(/\.type\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g, `.type($1, process.env.RECORDING_PASSWORD)`);
+
+      // 2) chained getByRole 單參形式，依 name 判斷帳號/密碼
+      line = line.replace(/(\.getByRole\([^)]*name\s*:\s*['"](?:密碼|password|pwd)['"][^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.RECORDING_PASSWORD)`);
+      line = line.replace(/(\.getByRole\([^)]*name\s*:\s*['"](?:帳號|account|user|username)['"][^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.NCERT_USERNAME)`);
+
+      // 3) locator('#password') 類型的 selector
+      line = line.replace(/(\.locator\([^)]*(?:password|pwd)[^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.RECORDING_PASSWORD)`);
+
+      // 4) 最後降級處理：單參的 .fill('...') /.type('...') 轉為 RECORDING_PASSWORD
+      line = line.replace(/\.(?:fill|type)\(\s*(['"])(?:\\.|[^\\])*?\1\s*\)/gu, `.fill(process.env.RECORDING_PASSWORD)`);
+
+      outLines.push(line);
+    }
+
+    content = outLines.join('\n');
+
     const header = '// ⚠️ 此錄製檔已被敏感資訊清理，密碼欄位已替換為 process.env.RECORDING_PASSWORD\n';
     if (!content.startsWith(header)) {
       content = header + content;
