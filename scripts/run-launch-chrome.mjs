@@ -19,8 +19,10 @@ if (process.platform === 'win32') {
   if (portIndex >= 0 && args[portIndex + 1]) {
     psArgs.push('-Port', args[portIndex + 1]);
   }
-  if (runCommand('pwsh', psArgs)) return;
-  runCommand('powershell', psArgs);
+  // 嘗試 pwsh；若失敗則嘗試 powershell（避免在 ESM 頂層使用 return）
+  if (runCommand('pwsh', psArgs) === false) {
+    runCommand('powershell', psArgs);
+  }
 } else {
   const scriptPath = path.join(rootDir, 'scripts', 'launch-chrome.sh');
   const shArgs = [scriptPath, ...args];

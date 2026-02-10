@@ -580,3 +580,21 @@ scripts/
 - 驗證：在 Node v25 環境下執行 `npm run setup` 不再拋出 Illegal return，流程會依序嘗試 pwsh 或 powershell，或在非 Windows 系統執行 bash 腳本。
 
 ---
+
+### fix(scripts): 修正 run-launch-chrome.mjs 的 Illegal return 導致 npm run start:chrome 失敗
+
+## 意圖與情境
+- 問題：與 run-setup.mjs 類似，scripts/run-launch-chrome.mjs 在 ESM 頂層使用 `return`，導致 `npm run start:chrome` 在 Node v25+ 拋出 `SyntaxError: Illegal return statement`。
+- 目標：以最小變動修正該腳本，保持既有行為（嘗試 pwsh -> powershell），同時符合 ESM 規範。
+
+## 執行內容
+- 修改：`scripts/run-launch-chrome.mjs`
+  - 變更呼叫邏輯：將 `if (runCommand('pwsh', psArgs)) return;` 改為在 pwsh 失敗時才執行 powershell（避免頂層 return）。
+
+## 決策理由
+- 保持行為一致：不更動 runCommand 的退出策略，僅調整呼叫端以避免 ESM 語法錯誤。
+
+## 執行結果
+- 驗證：在 Node v25 環境下執行 `npm run start:chrome` 不會再因 Illegal return 而崩潰；如系統為非 Windows，會執行 scripts/launch-chrome.sh。
+
+---
