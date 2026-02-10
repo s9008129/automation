@@ -19,7 +19,7 @@ if (process.platform === 'win32') {
   if (offline) {
     psArgs.push('-Offline');
   }
-  if (runCommand('pwsh', psArgs)) return;
+  runCommand('pwsh', psArgs);
   runCommand('powershell', psArgs);
 } else {
   const scriptPath = path.join(rootDir, 'scripts', 'setup.sh');
