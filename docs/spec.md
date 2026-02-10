@@ -221,6 +221,7 @@ equestShutdown() 設定 isShuttingDown = true
 - **FR-040**: macOS / Linux MUST 使用 scripts/launch-chrome.sh 啟動 Chrome Debug 模式
 - **FR-041**: macOS / Linux MUST 使用 scripts/setup.sh（或 npm run setup）安裝依賴
 - **FR-042**: 離線環境可使用 npm run setup:offline，需預先準備 node_modules 與 Playwright 瀏覽器目錄（建議 .playwright-browsers/ + PLAYWRIGHT_BROWSERS_PATH）
+- **FR-043**: 若無法安裝 Playwright，系統 MUST 提供 scripts/alt-verify-macos.sh 作為人工/半自動驗收替代流程（使用 osascript + screencapture），並將產出存放於 materials/alt-verify-*/
 
 ### 2.11 安全需求
 

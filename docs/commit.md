@@ -534,3 +534,30 @@ scripts/
 
 > 📌 **總結**：遵循本指引可確保每一筆 commit 都語意清晰、安全無虞、可追溯。
 > 如有疑問，請參閱 `docs/spec.md` 或 `docs/使用指南.md`。
+
+---
+
+## 最近提交記錄（自動產生）
+
+### feat(cross-platform): 增強 macOS 驗收流程與離線驗證替代方案
+
+## 意圖與情境
+- 目標：讓本專案在 macOS 環境可以順利完成驗收流程（啟動 Chrome Debug、導航到指定頁面、擷取 ARIA 快照、產生 codegen 錄製），並在無法安裝 Node.js 依賴（如 Playwright）的環境下，提供可執行的替代驗證方案。
+- 背景：執行 acceptance 腳本時發現系統在缺少 `playwright` 套件時會直接崩潰，導致無法完成驗收；且專案要求支援離線環境。
+
+## 執行內容（變更摘要）
+- 新增：`scripts/alt-verify-macos.sh`（macOS 替代驗證腳本，使用 osascript + curl + screencapture）
+- 修改：`scripts/acceptance-macos.sh`（啟動前檢查 `node_modules/playwright` 並提供友善提示）
+- 修改：`README.md`、`docs/spec.md`、`docs/使用指南.md`（加入 alt-verify 與離線驗證說明）
+
+## 驗證步驟（簡述）
+1. 線上模式：在可上網電腦執行 `npm run setup`，然後 `./scripts/acceptance-macos.sh`。
+2. 離線模式：在有網路機器準備 `node_modules` 與 Playwright 瀏覽器快取（複製到 `.playwright-browsers/`），設定環境變數 `PLAYWRIGHT_BROWSERS_PATH`，在離線機器執行 `./scripts/acceptance-macos.sh --offline` 或使用 `./scripts/alt-verify-macos.sh` 作替代驗證。
+
+## 影響檔案
+- 新增：`scripts/alt-verify-macos.sh`
+- 修改：`scripts/acceptance-macos.sh`, `README.md`, `docs/spec.md`, `docs/使用指南.md`
+
+---
+
+（此區為自動附加的最近提交摘要，非歷史變更記錄。若需更完整的 commit log，請使用 `git log --oneline` 檢視。）

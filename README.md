@@ -105,7 +105,8 @@ automation/
 │   ├── pre-commit-scan.sh        # 掃描錄製檔敏感模式（bash）
 │   ├── launch-chrome.sh          # macOS/Linux Chrome Debug 啟動
 │   ├── setup.sh                  # macOS/Linux 安裝腳本
-│   └── acceptance-macos.sh       # macOS 驗收腳本（含離線 mock）
+│   ├── acceptance-macos.sh       # macOS 驗收腳本（含離線 mock）
+│   └── alt-verify-macos.sh       # macOS 替代驗收（無 Playwright 環境）
 ├── docs/
 │   ├── spec.md                   # 功能規格（SDD）
 │   └── 使用指南.md                # 完整使用教學
