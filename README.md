@@ -62,6 +62,8 @@ npm run collect
 | 📸 ARIA 快照 | 擷取頁面語意結構（AI 分析的核心素材） |
 | 📷 截圖 | 全頁截圖 + 自動降級為視窗截圖 |
 | 🎬 Codegen 錄製 | 錄製使用者互動流程，生成 TypeScript 腳本 |
+| 🔐 錄製檔密碼清理 | 自動偵測並替換錄製檔中的明文密碼為環境變數 |
+| 📸 錄製後自動快照 | 錄製結束後自動解析 URL 並擷取各頁面 ARIA 快照 |
 | 📄 HTML 原始碼 | 擷取頁面 HTML（可選） |
 | 🔄 iframe 遞迴 | 自動深入多層 iframe 擷取結構 |
 | 📊 摘要報告 | 自動產生 summary-report.md |
@@ -73,6 +75,10 @@ npm run collect
 automation/
 ├── .github/
 │   └── copilot-instructions.md   # AI 開發準則
+├── .githooks/
+│   └── pre-commit                # 敏感資訊掃描 hook
+├── scripts/
+│   └── pre-commit-scan.ps1       # 掃描錄製檔敏感模式
 ├── docs/
 │   ├── spec.md                   # 功能規格（SDD）
 │   └── 使用指南.md                # 完整使用教學
@@ -115,6 +121,39 @@ automation/
 | 找不到頁面（選到 chrome:// 內部頁面） | 已自動過濾，確保 Chrome 中有開啟目標網站 |
 | Codegen spawn EINVAL | 已修復（Windows 使用 cmd.exe 包裝） |
 | 全頁截圖失敗 | 自動降級為視窗截圖 |
+
+---
+
+## 🔒 安全防護（Pre-commit Hook）
+
+<!-- Implemented T-04, T-05 by claude-opus-4.6 on 2026-02-10 -->
+
+錄製檔可能包含密碼等敏感資訊。本專案提供**雙重防護**：
+
+### 1. 錄製檔自動清理（`sanitizeRecording`）
+
+錄製結束後，工具會自動掃描 `.fill()` 呼叫中的密碼欄位，將明文密碼替換為環境變數 `process.env.RECORDING_PASSWORD`。
+
+如需設定替換值，請在執行前設定環境變數：
+
+```powershell
+# PowerShell（當次有效）
+$env:RECORDING_PASSWORD = "your-password"
+
+# 或建立 .env 檔案（已被 .gitignore 排除）
+# RECORDING_PASSWORD=your-password
+```
+
+### 2. Pre-commit Hook 掃描
+
+```powershell
+# 啟用 git hook（一次性設定）
+git config core.hooksPath .githooks
+```
+
+Hook 會在 commit 前掃描 `materials/recordings/*.ts`，若偵測到疑似密碼（`.fill(selector, 'password')`）、token 或 secret，將阻止 commit 並提示修正。
+
+> 💡 **建議**：先執行 `git config core.hooksPath .githooks` 啟用防護，再開始使用工具。
 
 ---
 

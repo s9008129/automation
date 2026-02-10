@@ -312,6 +312,19 @@ function waitForInput(prompt: string): Promise<string> {
   });
 }
 
+/** 移除 config 中的敏感 action.text 以避免寫入日誌 — Implemented T-03 by claude-opus-4.6 on 2026-02-10 */
+function redactConfigForLog(config: CollectConfig): CollectConfig {
+  const clone = JSON.parse(JSON.stringify(config)) as CollectConfig;
+  for (const page of clone.pages) {
+    for (const action of page.actions) {
+      if (action.type === 'type' && action.text) {
+        action.text = '***REDACTED***';
+      }
+    }
+  }
+  return clone;
+}
+
 /** 讀取並驗證設定檔 */
 function loadConfig(configPath: string): CollectConfig {
   if (!fs.existsSync(configPath)) {
@@ -987,6 +1000,57 @@ class MaterialCollector {
     return pageMeta;
   }
 
+  // ── 錄製後處理 — Implemented T-01, T-02 by claude-opus-4.6 on 2026-02-10 ──
+
+  /** 從錄製檔中提取 page.goto('url') 的 URL 列表 */
+  private extractUrlsFromRecording(filePath: string): string[] {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const urls: string[] = [];
+    const regex = /page\.goto\(['"]([^'"]+)['"]\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(content)) !== null) {
+      urls.push(m[1]);
+    }
+    return [...new Set(urls)];
+  }
+
+  /** 為錄製檔中提取的 URL 自動擷取 ARIA 快照 */
+  private async captureSnapshotsForUrls(urls: string[], flowName: string): Promise<void> {
+    if (!this.browser || urls.length === 0) return;
+    const ctx = this.browser.contexts()[0];
+    if (!ctx) return;
+    const page = await ctx.newPage();
+    try {
+      for (let i = 0; i < urls.length; i++) {
+        try {
+          await page.goto(urls[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
+          const snapName = `${safeFileName(flowName)}-url${i + 1}`;
+          await this.captureAriaSnapshot(page, snapName, `${flowName} URL#${i + 1}: ${urls[i]}`);
+        } catch (err) {
+          logError(`  快照 URL 失敗: ${urls[i]}`, err);
+        }
+      }
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  /** 清理錄製檔中的敏感資訊（密碼等） */
+  private sanitizeRecording(filePath: string): void {
+    let content = fs.readFileSync(filePath, 'utf-8');
+    const envPwd = process.env.RECORDING_PASSWORD || '';
+    content = content.replace(
+      /\.fill\(([^,]+),\s*'[^']*'\)/g,
+      `.fill($1, '${envPwd}')`
+    );
+    const header = '// ⚠️ 此錄製檔已經過敏感資訊清理，密碼欄位已替換\n';
+    if (!content.startsWith(header)) {
+      content = header + content;
+    }
+    fs.writeFileSync(filePath, content, 'utf-8');
+    log('🔒', `  已清理錄製檔敏感資訊: ${path.basename(filePath)}`);
+  }
+
   // ── Codegen 錄製 ──
 
   async startCodegenRecording(flowName: string, startUrl: string, instructions: string): Promise<string> {
@@ -1062,7 +1126,25 @@ class MaterialCollector {
       });
 
       if (fs.existsSync(outputFile)) {
-        log('✅', `錄製完成: ${outputFile} (${fs.statSync(outputFile).size} bytes)`);
+        // Implemented T-02, T-01, T-06 by claude-opus-4.6 on 2026-02-10
+        this.sanitizeRecording(outputFile);
+        if (this.config.collectOptions.ariaSnapshot) {
+          const urls = this.extractUrlsFromRecording(outputFile);
+          if (urls.length > 0) {
+            log('📸', `  從錄製檔提取到 ${urls.length} 個 URL，自動擷取快照...`);
+            await this.captureSnapshotsForUrls(urls, flowName);
+          }
+        }
+        const fSize = fs.statSync(outputFile).size;
+        log('✅', `錄製完成: ${outputFile} (${fSize} bytes)`);
+        console.log('');
+        console.log('  ┌──────────────────────────────────────────┐');
+        console.log('  │  🎬 錄製完成！                            │');
+        console.log(`  │  📄 ${path.basename(outputFile).padEnd(37)}│`);
+        console.log(`  │  📦 ${String(fSize).padEnd(31)} bytes │`);
+        console.log('  │  🔒 敏感資訊已自動清理                    │');
+        console.log('  └──────────────────────────────────────────┘');
+        console.log('');
         return path.basename(outputFile);
       } else {
         log('⚠️', '錄製完成但未產生檔案（可能操作中途關閉）');
@@ -1091,7 +1173,11 @@ class MaterialCollector {
     try {
       for (let i = 0; i < this.config.pages.length && !this.isShuttingDown; i++) {
         const target = this.config.pages[i];
-        log('📄', `[${i + 1}/${this.config.pages.length}] 處理頁面: ${target.description}`);
+        // Implemented T-04 by claude-opus-4.6 on 2026-02-10 — progress bar
+        const total = this.config.pages.length;
+        const filled = Math.round(((i + 1) / total) * 20);
+        const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+        log('📄', `[${i + 1}/${total}] [${bar}] 處理頁面: ${target.description}`);
 
         const page = await this.getActivePage();
 
@@ -1428,7 +1514,7 @@ async function main(): Promise<void> {
   if (args.includes('--auto')) {
     const config = loadConfig(configPath);
     writeLogContext('mode', { mode: 'auto' });
-    writeLogContext('config', config);
+    writeLogContext('config', redactConfigForLog(config));
     if (cdpPortArg) config.cdpPort = cdpPortArg;
     const collector = new MaterialCollector(config);
     activeCollector = collector;
@@ -1451,7 +1537,7 @@ async function main(): Promise<void> {
       interactiveFlows: [],
     };
     writeLogContext('mode', { mode: 'snapshot' });
-    writeLogContext('config', config);
+    writeLogContext('config', redactConfigForLog(config));
     const collector = new MaterialCollector(config);
     activeCollector = collector;
     await collector.collectSnapshot();
@@ -1483,7 +1569,7 @@ async function main(): Promise<void> {
       }],
     };
     writeLogContext('mode', { mode: 'record' });
-    writeLogContext('config', config);
+    writeLogContext('config', redactConfigForLog(config));
     const collector = new MaterialCollector(config);
     activeCollector = collector;
     await collector.collectAll();
@@ -1516,7 +1602,7 @@ async function main(): Promise<void> {
           interactiveFlows: [],
         };
         writeLogContext('mode', { mode: 'interactive' });
-        writeLogContext('config', config);
+        writeLogContext('config', redactConfigForLog(config));
         const collector = new MaterialCollector(config);
         activeCollector = collector;
         await collector.collectInteractive();
@@ -1525,7 +1611,7 @@ async function main(): Promise<void> {
       case '2': {
         const config = loadConfig(configPath);
         writeLogContext('mode', { mode: 'auto' });
-        writeLogContext('config', config);
+        writeLogContext('config', redactConfigForLog(config));
         if (cdpPortArg) config.cdpPort = cdpPortArg;
         const collector = new MaterialCollector(config);
         activeCollector = collector;
@@ -1549,7 +1635,7 @@ async function main(): Promise<void> {
           interactiveFlows: [],
         };
         writeLogContext('mode', { mode: 'snapshot' });
-        writeLogContext('config', config);
+        writeLogContext('config', redactConfigForLog(config));
         const collector = new MaterialCollector(config);
         activeCollector = collector;
         await collector.collectSnapshot();
@@ -1579,7 +1665,7 @@ async function main(): Promise<void> {
           }],
         };
         writeLogContext('mode', { mode: 'record' });
-        writeLogContext('config', config);
+        writeLogContext('config', redactConfigForLog(config));
         const collector = new MaterialCollector(config);
         activeCollector = collector;
         await collector.collectAll();

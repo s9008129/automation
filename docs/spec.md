@@ -2,8 +2,8 @@
 
 **專案名稱**: web-material-collector  
 **建立日期**: 2026-02-09  
-**最後更新**: 2026-02-10（已由 claude-opus-4.6 子代理更新）  
-**狀態**: v1.0.0 — 核心功能已實作（ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 優雅關閉 ✅）  
+**最後更新**: 2026-02-10（已由 claude-opus-4.6 更新：錄製清理/ARIA 自動快照/Pre-commit Hook）  
+**狀態**: v1.2.0 — 核心功能已實作（ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 優雅關閉 ✅ 錄製密碼清理 ✅ 錄製後 ARIA 快照 ✅ Pre-commit Hook ✅）  
 **環境**: Windows 11 + PowerShell 7.x + Node.js v20+ + Playwright ^1.52.0 + TypeScript ^5.7.3
 
 > **專案定位**：一個「離線素材蒐集工具」——在無外部網路的內部網路環境中，透過 Chrome CDP Debug 模式連接已登入的瀏覽器，蒐集 ARIA 快照、截圖、Codegen 錄製等素材，供外部 AI 分析生成自動化腳本。  
@@ -70,6 +70,8 @@
 2. **Given** 使用者確認開始錄製，**When** 系統啟動 Codegen，**Then** 開啟新的瀏覽器視窗讓使用者操作
 3. **Given** Codegen 正在錄製，**When** 使用者關閉錄製視窗，**Then** 系統將錄製結果儲存到 `materials/recordings/` 目錄
 4. **Given** 錄製在 Windows 環境執行，**When** 啟動 Codegen，**Then** 使用 `cmd.exe /d /s /c` 包裝命令避免 spawn EINVAL 錯誤
+5. **Given** 錄製檔已儲存，**When** 錄製檔包含密碼欄位的 `.fill()` 呼叫，**Then** 系統自動執行 `sanitizeRecording()` 將明文密碼替換為 `process.env.RECORDING_PASSWORD`
+6. **Given** 錄製檔已完成清理，**When** 錄製檔中包含 `page.goto()` 呼叫，**Then** 系統自動執行 `extractUrlsFromRecording()` 提取 URL 並逐一擷取 ARIA 快照
 
 ---
 
@@ -123,6 +125,9 @@
 - **Codegen 在 Windows 上 spawn 失敗**：使用 `cmd.exe` 包裝命令，設定 `windowsVerbatimArguments: true`
 - **使用者 Ctrl+C 中斷**：攔截 SIGINT/SIGTERM，透過 `requestShutdown()` 優雅關閉，確保 `finally` 區塊執行 `saveMetadata()` 與 `disconnect()`
 - **CDP 預存頁面 `page.url()` 為空**：使用 `CDPSession.send('Runtime.evaluate')` 取得真實 URL，若 `page.url() === ''` 則自動開啟新分頁並導航至同一 URL
+- **錄製檔含明文密碼**：`sanitizeRecording()` 自動偵測並替換 `.fill()` 中的密碼欄位為 `process.env.RECORDING_PASSWORD`
+- **錄製後缺少中間頁面快照**：`extractUrlsFromRecording()` 解析 `page.goto()` URL，`captureSnapshotsForUrls()` 逐一擷取 ARIA 快照
+- **敏感資料意外 commit**：`.githooks/pre-commit` 掃描錄製檔中的密碼、token、secret 模式，匹配時阻止 commit
 
 ---
 
@@ -156,6 +161,29 @@
 
 - **FR-027**: 原始碼與錄製檔中 MUST NOT 包含明文憑證（帳號密碼），應使用環境變數（如 `NCERT_USERNAME`/`NCERT_PASSWORD`）或 `.env` 檔案
 - **FR-028**: `.gitignore` MUST 包含 `.env` 與 `logs/`，防止敏感資料與日誌被提交到版本控制
+
+<!-- Implemented T-04 by claude-opus-4.6 on 2026-02-10 -->
+
+#### 錄製檔密碼清理（sanitizeRecording）
+
+- **FR-032**: 系統 MUST 在錄製結束後自動執行 `sanitizeRecording()`，掃描 `.fill()` 呼叫中的密碼欄位並將明文密碼替換為 `process.env.RECORDING_PASSWORD`
+- **FR-033**: `sanitizeRecording()` MUST 在錄製檔開頭加入清理標記 `// ⚠️ 此錄製檔已經過敏感資訊清理`
+- **FR-034**: 系統 MUST 支援透過環境變數 `RECORDING_PASSWORD` 設定密碼替換值
+
+<!-- Implemented T-01, T-03 by claude-opus-4.6 on 2026-02-10 -->
+
+#### 錄製後自動擷取 ARIA 快照
+
+- **FR-035**: 系統 MUST 在錄製結束後執行 `extractUrlsFromRecording()`，從錄製檔解析所有 `page.goto()` 呼叫中的 URL
+- **FR-036**: 系統 MUST 對提取的 URL 執行 `captureSnapshotsForUrls()`，逐一導航並擷取 ARIA 快照，儲存命名格式為 `{flowName}-url{index}.md`
+
+<!-- Implemented T-05 by claude-opus-4.6 on 2026-02-10 -->
+
+#### Pre-commit Hook 安全防護
+
+- **FR-037**: `.githooks/pre-commit` MUST 在 `git commit` 時呼叫 `scripts/pre-commit-scan.ps1` 掃描 `materials/recordings/*.ts`
+- **FR-038**: `pre-commit-scan.ps1` MUST 掃描密碼（`.fill` 明文）、token、secret 模式，偵測到匹配時 MUST 以 exit code 1 阻止 commit
+- **FR-039**: 使用者 MUST 透過 `git config core.hooksPath .githooks` 啟用 pre-commit hook
 
 #### 操作模式
 
@@ -354,6 +382,9 @@ class MaterialCollector {
 | T-07 | spec.md 新增 FR-021~FR-031 | 檢視 `docs\spec.md` 中 FR 編號 | 包含 FR-021 至 FR-031 | `git checkout docs\spec.md` |
 | T-08 | 使用指南新增安全與優雅關閉段落 | 檢視 `docs\使用指南.md` | 包含 SIGINT/安全準則段落 | `git checkout docs\使用指南.md` |
 | T-09 | spec.md/使用指南.md 新增 SDD 與 Auto Commit 說明 | 檢視文件 | 包含 SDD 開發法與 Commit 規範 | `git checkout docs\spec.md docs\使用指南.md` |
+| T-10 | 錄製檔密碼自動清理（sanitizeRecording） | 錄製含密碼流程後檢查 `.ts` 檔案 | 密碼被替換為 `process.env.RECORDING_PASSWORD` | `git checkout collect-materials.ts` |
+| T-11 | 錄製後自動擷取中間頁面 ARIA 快照 | 錄製後檢查 `materials/aria-snapshots/` | 出現 `{flowName}-url*.md` 快照檔案 | `git checkout collect-materials.ts` |
+| T-12 | Pre-commit Hook 掃描敏感資訊 | `git config core.hooksPath .githooks` 後嘗試 commit 含密碼的錄製檔 | commit 被阻止 | `git config --unset core.hooksPath` |
 
 ---
 
@@ -361,5 +392,6 @@ class MaterialCollector {
 
 | 版本 | 日期 | 變更內容 |
 |------|------|------|
+| 1.2.0 | 2026-02-10 | 新增 FR-032~FR-039（錄製檔密碼清理、錄製後自動 ARIA 快照、Pre-commit Hook 安全防護）、新增 User Story 2 驗收情境 5-6、新增邊緣案例（密碼清理、中間頁面快照、敏感資料 commit）、新增修補清單 T-10~T-12 |
 | 1.1.0 | 2026-02-10 | 已由 claude-opus-4.6 子代理更新：新增 FR-021~FR-031（CDP 預存頁面、優雅關閉、安全、metadata 時區、log 格式）、新增 SDD/Auto Commit/安全準則/SIGINT 流程/修補清單段落、更新 SC-006~SC-008、更新邊緣案例與 Clarifications |
 | 1.0.0 | 2026-02-09 | 初始版本：User Stories、FR 需求、成功標準、第一性原理分析 |
