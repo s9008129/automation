@@ -3,6 +3,7 @@ dist/
 materials/
 chrome-debug-profile/
 logs/
+.env
 *.js
 *.d.ts
 *.js.map
