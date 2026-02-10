@@ -561,3 +561,22 @@ scripts/
 ---
 
 （此區為自動附加的最近提交摘要，非歷史變更記錄。若需更完整的 commit log，請使用 `git log --oneline` 檢視。）
+
+### fix(scripts): 修正 run-setup.mjs 的 Illegal return 導致 npm run setup 失敗
+
+## 意圖與情境
+- 問題：在 Node.js ESM（.mjs）模組中，頂層使用 `return` 會拋出 `SyntaxError: Illegal return statement`，導致 `npm run setup` 在部分環境（Node v25+）失敗。
+- 目標：以最小範圍修正，讓 `npm run setup` 在 ESM 環境下能夠正常運行且不改變原本的執行行為。
+
+## 執行內容
+- 修改：`scripts/run-setup.mjs`
+  - 移除對 `runCommand('pwsh', ...)` 的頂層 `return` 使用，改為在 pwsh 不存在時再執行 `powershell`，避免在模組頂層出現 `return`。
+
+## 決策理由
+- 最小侵入性：不改變 `runCommand` 的退出行為（成功時仍使用 `process.exit(status)`），僅修正呼叫端以符合 ESM 規範。
+- 可回溯：修正容易理解且不影響 Windows/Linux/macOS 的既有流程。
+
+## 執行結果
+- 驗證：在 Node v25 環境下執行 `npm run setup` 不再拋出 Illegal return，流程會依序嘗試 pwsh 或 powershell，或在非 Windows 系統執行 bash 腳本。
+
+---
