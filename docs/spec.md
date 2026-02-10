@@ -2,12 +2,26 @@
 
 **專案名稱**: web-material-collector  
 **建立日期**: 2026-02-09  
-**最後更新**: 2026-02-09  
-**狀態**: v1.0.0 — 核心功能已實作（ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅）  
-**環境**: Windows 11 + PowerShell 7.x + Node.js + Playwright
+**最後更新**: 2026-02-10（已由 claude-opus-4.6 子代理更新）  
+**狀態**: v1.0.0 — 核心功能已實作（ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 優雅關閉 ✅）  
+**環境**: Windows 11 + PowerShell 7.x + Node.js v20+ + Playwright ^1.52.0 + TypeScript ^5.7.3
 
 > **專案定位**：一個「離線素材蒐集工具」——在無外部網路的內部網路環境中，透過 Chrome CDP Debug 模式連接已登入的瀏覽器，蒐集 ARIA 快照、截圖、Codegen 錄製等素材，供外部 AI 分析生成自動化腳本。  
 > **核心價值**：橋接內部網路（無 AI）與外部環境（有 AI）的鴻溝，實現「人工蒐集 → AI 生成 → 內網執行」的工作流程。
+
+---
+
+## 前置條件與啟動命令
+
+- **OS / Shell**：Windows 11 + PowerShell 7.x（目標環境）
+- **Node.js**：v20+（由 `setup.ps1` 驗證）
+- **Chrome Debug 啟動命令**（PowerShell）：
+  ```powershell
+  .\launch-chrome.ps1
+  # 指定 CDP 端口（預設 9222）
+  .\launch-chrome.ps1 -Port 9223
+  ```
+- **CDP_PORT**：預設 `9222`（CLI `--port` / 設定檔 `cdpPort` 對應同一端口）
 
 ---
 
@@ -18,6 +32,12 @@
 - Q: Chrome Debug 模式連接後為什麼找不到正確頁面？ → A: Chrome CDP 會列出內部頁面（`chrome://omnibox-popup`、`chrome://newtab-footer`），必須過濾只保留 `http://` / `https://` 頁面。
 - Q: Windows 上 `npx` 為什麼 spawn 失敗？ → A: Node.js v24+ 在 Windows 直接 spawn `npx.cmd` 會觸發 `EINVAL`，改用 `cmd.exe /d /s /c "npx ..."` + `windowsVerbatimArguments: true`。
 - Q: 端口 9222 被普通 Chrome 占用怎麼辦？ → A: `launch-chrome.ps1` 會偵測端口佔用者的命令列，區分是我們的 debug Chrome 還是一般 Chrome，並提示用戶處理。
+
+### Session 2026-02-10
+
+- Q: `connectOverCDP` 連接後 `page.url()` 回傳空字串怎麼辦？ → A: 預存頁面（連接前已開啟的頁面）的 `page.url()` 可能為空。使用 `CDPSession.send('Runtime.evaluate', { expression: 'location.href' })` 取得真實 URL，若偵測到預存頁面則自動開啟新分頁並導航至同一 URL。
+- Q: 使用者按 Ctrl+C 時如何確保 metadata 被寫入？ → A: `SIGINT`/`SIGTERM` 信號觸發 `collector.requestShutdown()`，設定 `isShuttingDown = true`，讓迴圈在下一輪迭代停止，並進入 `finally` 區塊執行 `saveMetadata()` 與 `disconnect()`。
+- Q: `.env` 檔案是否應加入 `.gitignore`？ → A: 是，已新增 `.env` 至 `.gitignore`，避免明文憑證被意外提交。
 
 ---
 
@@ -96,12 +116,13 @@
 
 ### 邊緣案例
 
-- **Chrome 內部頁面干擾**：`getActivePage()` 必須過濾 `chrome://`、`chrome-extension://`、`devtools://`、`about:blank` 等內部頁面
+- **Chrome 內部頁面干擾**：`getActivePage()` 必須過濾 `chrome://`、`chrome-extension://`、`chrome-untrusted://`、`devtools://`、`about:blank` 等內部頁面
 - **端口被非 debug Chrome 占用**：`launch-chrome.ps1` 透過 `Win32_Process.CommandLine` 檢查是否為我們的 debug profile
 - **全頁截圖失敗**：某些頁面不支援 `fullPage: true`，自動降級為視窗截圖
 - **iframe 超過深度限制**：`iframeDepth` 限制遞迴深度（預設 3，最大 10）
 - **Codegen 在 Windows 上 spawn 失敗**：使用 `cmd.exe` 包裝命令，設定 `windowsVerbatimArguments: true`
-- **使用者 Ctrl+C 中斷**：攔截 SIGINT/SIGTERM，安全斷開 CDP 連接
+- **使用者 Ctrl+C 中斷**：攔截 SIGINT/SIGTERM，透過 `requestShutdown()` 優雅關閉，確保 `finally` 區塊執行 `saveMetadata()` 與 `disconnect()`
+- **CDP 預存頁面 `page.url()` 為空**：使用 `CDPSession.send('Runtime.evaluate')` 取得真實 URL，若 `page.url() === ''` 則自動開啟新分頁並導航至同一 URL
 
 ---
 
@@ -112,12 +133,29 @@
 #### 核心功能
 
 - **FR-001**: 系統 MUST 透過 Chrome CDP（`connectOverCDP`）連接到使用者已開啟的 Chrome Debug 模式
-- **FR-002**: 系統 MUST 過濾 Chrome 內部頁面（`chrome://`、`chrome-extension://`、`devtools://`、`about:blank`），只操作使用者可見的 http/https 頁面
+- **FR-002**: 系統 MUST 過濾 Chrome 內部頁面（`chrome://`、`chrome-extension://`、`chrome-untrusted://`、`devtools://`、`about:blank`），只操作使用者可見的 http/https 頁面
 - **FR-003**: 系統 MUST 能擷取頁面 ARIA 快照（包含 iframe 遞迴，深度可設定）
 - **FR-004**: 系統 MUST 能擷取頁面截圖（全頁截圖失敗時自動降級為視窗截圖）
 - **FR-005**: 系統 MUST 能啟動 Playwright Codegen 錄製使用者互動流程
 - **FR-006**: 系統 MUST 能擷取頁面 HTML 原始碼（可選功能）
-- **FR-007**: 系統 MUST 在斷開連接時 NEVER 呼叫 `browser.close()`（保持使用者 Chrome 運行）
+- **FR-007**: 系統 MUST 在斷開連接時 NEVER 呼叫 `browser.close()`（保持使用者 Chrome 運行），只將 `this.browser = null`
+
+#### CDP 預存頁面處理
+
+- **FR-021**: 系統 MUST 偵測 `page.url() === ''` 的 CDP 預存頁面，使用 `CDPSession.send('Runtime.evaluate', { expression: 'location.href' })` 取得真實 URL
+- **FR-022**: 系統 MUST 在偵測到預存頁面時，自動開啟新分頁（`context.newPage()`）並導航至真實 URL
+- **FR-023**: 系統 MUST 在取得頁面標題時先嘗試 `page.title()`，超時 3 秒後降級為 CDPSession 方式
+
+#### 優雅關閉（Graceful Shutdown）
+
+- **FR-024**: 系統 MUST 攔截 `SIGINT`（Ctrl+C）和 `SIGTERM` 信號
+- **FR-025**: 收到中斷信號時，系統 MUST 透過 `requestShutdown()` 設定 `isShuttingDown = true`，讓進行中的蒐集迴圈在下一輪迭代停止
+- **FR-026**: 系統 MUST 保證 `finally` 區塊執行，確保 `saveMetadata()` 與 `disconnect()` 在中斷時仍能完成
+
+#### 安全需求
+
+- **FR-027**: 原始碼與錄製檔中 MUST NOT 包含明文憑證（帳號密碼），應使用環境變數（如 `NCERT_USERNAME`/`NCERT_PASSWORD`）或 `.env` 檔案
+- **FR-028**: `.gitignore` MUST 包含 `.env` 與 `logs/`，防止敏感資料與日誌被提交到版本控制
 
 #### 操作模式
 
@@ -137,6 +175,13 @@
 - **FR-015**: 系統 MUST 產生結構化 log 檔案（含時間戳、層級、環境資訊、錯誤堆疊）
 - **FR-016**: log 檔案 MUST 記錄 CDP 連接後所有頁面的 URL 和 `isUserPage` 狀態
 - **FR-017**: 所有 catch 區塊 MUST 將錯誤記錄到 log 和 `metadata.errors` 陣列
+- **補充**：log 檔名規則為 `logs\setup-YYYYMMDD-HHMMSS.log`、`logs\launch-chrome-YYYYMMDD-HHMMSS.log`、`logs\collect-materials-YYYYMMDD-HHMMSS.log`（時間戳使用台北時間）
+
+#### metadata.json 規範
+
+- **FR-029**: `metadata.json` MUST 包含以下欄位：`projectName`、`collectedAt`、`timezone`、`toolVersion`、`platform`、`nodeVersion`、`playwrightVersion`、`logFile`、`totalPages`、`collectedPages`、`recordings`、`errors`
+- **FR-030**: `metadata.json` 的 `timezone` 欄位 MUST 為 `Asia/Taipei (UTC+8)`，所有時間戳記 MUST 使用 `getTaipeiISO()` 產生（格式：`YYYY-MM-DDTHH:mm:ss+08:00`）
+- **FR-031**: log 檔案格式 MUST 為 `[ISO8601時間戳][層級] emoji 訊息`，層級為 `INFO`/`WARN`/`ERROR`/`CONTEXT`
 
 #### Windows 相容
 
@@ -162,7 +207,9 @@
 - **SC-003**: 互動模式下蒐集 ARIA 快照和截圖的成功率達 95% 以上
 - **SC-004**: Codegen 錄製在 Windows 11 + Node.js v24+ 環境下正常啟動
 - **SC-005**: 所有錯誤都記錄在 log 檔案和 metadata.json 中，AI 可透過 log 診斷問題根因
-- **SC-006**: Chrome 內部頁面（`chrome://`）被正確過濾，不影響素材蒐集
+- **SC-006**: Chrome 內部頁面（`chrome://`、`chrome-untrusted://` 等）被正確過濾，不影響素材蒐集
+- **SC-007**: 使用者按 Ctrl+C 後，metadata.json 與 summary-report.md 仍能正確寫入
+- **SC-008**: `.gitignore` 包含 `.env` 與 `logs/`，敏感資料不被提交
 
 ---
 
@@ -206,8 +253,113 @@
 
 ---
 
+## 📜 SDD 開發法（Specification-Driven Development）
+
+### 核心原則：文件即可執行資產
+
+| 原則 | 說明 |
+|------|------|
+| 文件是真理來源 | 程式碼必須符合文件規格，不是相反 |
+| 先文件後程式碼 | 任何功能開發前必須先更新規格文件 |
+| 文件即測試 | 驗收標準（Given-When-Then）直接轉換為驗證流程 |
+| 文件即溝通 | 所有技術決策記錄在文件中，減少口頭溝通成本 |
+
+### SDD 文件清單
+
+| 文件 | 路徑 | 可執行性 |
+|------|------|---------|
+| 功能規格 | `docs/spec.md` | ✅ Given-When-Then 可直接轉換為測試案例 |
+| 使用指南 | `docs/使用指南.md` | ✅ 步驟可直接複製執行 |
+| README | `README.md` | ✅ 快速開始可直接複製執行 |
+| AI 開發準則 | `.github/copilot-instructions.md` | ✅ AI 開發規範 |
+
+---
+
+## 🔄 Auto Commit 策略
+
+每次完成任務後 MUST 執行 git commit。Commit 訊息格式：
+
+```
+<type>(<scope>): <簡短摘要>
+```
+
+| Type | 用途 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 錯誤修復 |
+| `docs` | 文件更新 |
+| `refactor` | 重構 |
+| `chore` | 雜項 |
+
+- Commit 訊息 MUST 使用繁體中文（zh-TW），技術術語可保留英文
+
+---
+
+## 🔒 安全準則
+
+- 原始碼與錄製檔中 **MUST NOT** 包含明文帳號密碼
+- 自動化腳本需要憑證時，MUST 使用環境變數（如 `NCERT_USERNAME`/`NCERT_PASSWORD`）或 `.env` 檔案
+- `.gitignore` MUST 包含 `.env` 與 `logs/`
+- `safeFileName()` 防止路徑穿越攻擊
+- `validateUrl()` 只允許 `http:`/`https:`/`about:` 協定
+- 不記錄使用者密碼到日誌
+
+---
+
+## 🛑 SIGINT/SIGTERM 優雅關閉流程
+
+```typescript
+// 模組層級的 collector 參考
+let activeCollector: MaterialCollector | null = null;
+
+process.on('SIGINT', () => {
+  if (activeCollector) {
+    activeCollector.requestShutdown();   // 設定 isShuttingDown = true
+  } else {
+    process.exit(0);
+  }
+});
+
+// MaterialCollector 內部
+class MaterialCollector {
+  private isShuttingDown = false;
+  requestShutdown(): void { this.isShuttingDown = true; }
+
+  async collectInteractive(): Promise<void> {
+    try {
+      while (!this.isShuttingDown) {
+        // 蒐集頁面...
+      }
+    } finally {
+      this.saveMetadata();         // 保證 metadata.json 寫入
+      this.generateSummaryReport(); // 保證 summary-report.md 寫入
+      await this.disconnect();      // 斷開連線（不關閉 Chrome）
+    }
+  }
+}
+```
+
+---
+
+## ✅ 重點修補清單
+
+| 編號 | 變更摘要 | 驗證指令 | 接受標準 | 回滾方法 |
+|------|---------|---------|---------|---------|
+| T-01 | 新增 `chrome-untrusted://` 至內部頁面過濾清單 | 檢查 `isUserPageByUrl()` 中包含 `chrome-untrusted://` | 該協定頁面被過濾 | `git checkout collect-materials.ts` |
+| T-02 | CDP 預存頁面自動重新附加（`page.url()===''` 處理） | 連線後觀察 log 中 `偵測到 CDP 預存頁面` | 自動開新分頁並導航 | `git checkout collect-materials.ts` |
+| T-03 | SIGINT/SIGTERM 優雅關閉（`requestShutdown()`） | 蒐集中按 Ctrl+C，檢查 metadata.json 是否存在 | metadata 與 report 正確寫入 | `git checkout collect-materials.ts` |
+| T-04 | CDPSession 解析真實 URL/Title（替代 `page.url()` 空值） | 查看 log 中 `resolvePageUrl` 記錄 | syncUrl 為空時 realUrl 有值 | `git checkout collect-materials.ts` |
+| T-05 | `.gitignore` 新增 `.env` | `cat .gitignore \| Select-String ".env"` | 輸出包含 `.env` | `git checkout .gitignore` |
+| T-06 | metadata.json timezone 欄位為 `Asia/Taipei (UTC+8)` | `Get-Content materials\metadata.json \| Select-String timezone` | 值為 `Asia/Taipei (UTC+8)` | 無需回滾（讀取驗證） |
+| T-07 | spec.md 新增 FR-021~FR-031 | 檢視 `docs\spec.md` 中 FR 編號 | 包含 FR-021 至 FR-031 | `git checkout docs\spec.md` |
+| T-08 | 使用指南新增安全與優雅關閉段落 | 檢視 `docs\使用指南.md` | 包含 SIGINT/安全準則段落 | `git checkout docs\使用指南.md` |
+| T-09 | spec.md/使用指南.md 新增 SDD 與 Auto Commit 說明 | 檢視文件 | 包含 SDD 開發法與 Commit 規範 | `git checkout docs\spec.md docs\使用指南.md` |
+
+---
+
 ## 📝 變更記錄
 
 | 版本 | 日期 | 變更內容 |
 |------|------|------|
+| 1.1.0 | 2026-02-10 | 已由 claude-opus-4.6 子代理更新：新增 FR-021~FR-031（CDP 預存頁面、優雅關閉、安全、metadata 時區、log 格式）、新增 SDD/Auto Commit/安全準則/SIGINT 流程/修補清單段落、更新 SC-006~SC-008、更新邊緣案例與 Clarifications |
 | 1.0.0 | 2026-02-09 | 初始版本：User Stories、FR 需求、成功標準、第一性原理分析 |
