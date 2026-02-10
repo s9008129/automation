@@ -169,6 +169,24 @@ function getTaipeiTimestampForFile(): string {
 // 工具函數
 // ============================================================
 
+function loadDotEnv(): void {
+  const envPath = path.join(process.cwd(), '.env');
+  if (!fs.existsSync(envPath)) return;
+  const content = fs.readFileSync(envPath, 'utf8');
+  content.split(/\r?\n/).forEach(line => {
+    const m = line.match(/^\s*([^#=]+?)\s*=\s*(.*)\s*$/);
+    if (m) {
+      let key = m[1].trim();
+      let val = m[2].trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (!process.env[key]) process.env[key] = val;
+    }
+  });
+  log('ℹ️', `.env loaded (${envPath})`);
+}
+
 function writeLogLine(line: string): void {
   if (logFilePath) {
     fs.appendFileSync(logFilePath, `${line}\n`, 'utf-8');
@@ -1128,13 +1146,14 @@ class MaterialCollector {
       if (fs.existsSync(outputFile)) {
         // Implemented T-02, T-01, T-06 by claude-opus-4.6 on 2026-02-10
         this.sanitizeRecording(outputFile);
-        if (this.config.collectOptions.ariaSnapshot) {
-          const urls = this.extractUrlsFromRecording(outputFile);
-          if (urls.length > 0) {
-            log('📸', `  從錄製檔提取到 ${urls.length} 個 URL，自動擷取快照...`);
-            await this.captureSnapshotsForUrls(urls, flowName);
-          }
-        }
+        // T-03 disabled per user directive: do not auto-parse recording for URLs; prefer pre-record ARIA capture in interactive mode
+        // if (this.config.collectOptions.ariaSnapshot) {
+        //   const urls = this.extractUrlsFromRecording(outputFile);
+        //   if (urls.length > 0) {
+        //     log('📸', `  從錄製檔提取到 ${urls.length} 個 URL，自動擷取快照...`);
+        //     await this.captureSnapshotsForUrls(urls, flowName);
+        //   }
+        // }
         const fSize = fs.statSync(outputFile).size;
         log('✅', `錄製完成: ${outputFile} (${fSize} bytes)`);
         console.log('');
