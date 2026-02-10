@@ -384,6 +384,12 @@ class MaterialCollector {
   private outputDir: string;
   private metadata: MaterialMetadata;
   private config: CollectConfig;
+  private isShuttingDown = false;
+
+  /** 請求優雅關閉，讓進行中的迴圈在下一輪迭代時停止 */
+  requestShutdown(): void {
+    this.isShuttingDown = true;
+  }
 
   constructor(config: CollectConfig) {
     this.config = config;
@@ -1083,7 +1089,7 @@ class MaterialCollector {
     await this.connect();
 
     try {
-      for (let i = 0; i < this.config.pages.length; i++) {
+      for (let i = 0; i < this.config.pages.length && !this.isShuttingDown; i++) {
         const target = this.config.pages[i];
         log('📄', `[${i + 1}/${this.config.pages.length}] 處理頁面: ${target.description}`);
 
@@ -1146,7 +1152,7 @@ class MaterialCollector {
       let continueCollecting = true;
       const MAX_PAGES = 100;
 
-      while (continueCollecting && pageIndex <= MAX_PAGES) {
+      while (continueCollecting && pageIndex <= MAX_PAGES && !this.isShuttingDown) {
         console.log('');
         console.log(`  +---------------------------------------+`);
         console.log(`  |  第 ${pageIndex} 個頁面                          |`);
@@ -1368,13 +1374,26 @@ class MaterialCollector {
 // CLI 入口
 // ============================================================
 
+// 模組層級的 collector 參考，供 signal handler 使用
+let activeCollector: MaterialCollector | null = null;
+
 process.on('SIGINT', () => {
-  log('⚠️', '收到中斷信號 (Ctrl+C)，正在安全退出...', 'WARN');
-  process.exit(0);
+  if (activeCollector) {
+    log('⚠️', '收到中斷信號 (Ctrl+C)，正在優雅關閉…將儲存 metadata 並斷開連線', 'WARN');
+    activeCollector.requestShutdown();
+  } else {
+    log('⚠️', '收到中斷信號 (Ctrl+C)，正在安全退出...', 'WARN');
+    process.exit(0);
+  }
 });
 process.on('SIGTERM', () => {
-  log('⚠️', '收到終止信號，正在安全退出...', 'WARN');
-  process.exit(0);
+  if (activeCollector) {
+    log('⚠️', '收到終止信號，正在優雅關閉…將儲存 metadata 並斷開連線', 'WARN');
+    activeCollector.requestShutdown();
+  } else {
+    log('⚠️', '收到終止信號，正在安全退出...', 'WARN');
+    process.exit(0);
+  }
 });
 
 async function main(): Promise<void> {
@@ -1412,6 +1431,7 @@ async function main(): Promise<void> {
     writeLogContext('config', config);
     if (cdpPortArg) config.cdpPort = cdpPortArg;
     const collector = new MaterialCollector(config);
+    activeCollector = collector;
     await collector.collectAll();
 
   } else if (args.includes('--snapshot')) {
@@ -1433,6 +1453,7 @@ async function main(): Promise<void> {
     writeLogContext('mode', { mode: 'snapshot' });
     writeLogContext('config', config);
     const collector = new MaterialCollector(config);
+    activeCollector = collector;
     await collector.collectSnapshot();
 
   } else if (args.includes('--record')) {
@@ -1464,6 +1485,7 @@ async function main(): Promise<void> {
     writeLogContext('mode', { mode: 'record' });
     writeLogContext('config', config);
     const collector = new MaterialCollector(config);
+    activeCollector = collector;
     await collector.collectAll();
 
   } else {
@@ -1496,6 +1518,7 @@ async function main(): Promise<void> {
         writeLogContext('mode', { mode: 'interactive' });
         writeLogContext('config', config);
         const collector = new MaterialCollector(config);
+        activeCollector = collector;
         await collector.collectInteractive();
         break;
       }
@@ -1505,6 +1528,7 @@ async function main(): Promise<void> {
         writeLogContext('config', config);
         if (cdpPortArg) config.cdpPort = cdpPortArg;
         const collector = new MaterialCollector(config);
+        activeCollector = collector;
         await collector.collectAll();
         break;
       }
@@ -1527,6 +1551,7 @@ async function main(): Promise<void> {
         writeLogContext('mode', { mode: 'snapshot' });
         writeLogContext('config', config);
         const collector = new MaterialCollector(config);
+        activeCollector = collector;
         await collector.collectSnapshot();
         break;
       }
@@ -1556,6 +1581,7 @@ async function main(): Promise<void> {
         writeLogContext('mode', { mode: 'record' });
         writeLogContext('config', config);
         const collector = new MaterialCollector(config);
+        activeCollector = collector;
         await collector.collectAll();
         break;
       }
