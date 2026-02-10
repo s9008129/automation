@@ -18,7 +18,13 @@ MOCK_TARGET="${MOCK_START}/article.html"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "==> 啟動 Chrome Debug（Port: $PORT）"
+if [[ ! -d "$ROOT_DIR/node_modules/playwright" ]]; then
+  echo "❌ 找不到 Playwright 套件（$ROOT_DIR/node_modules/playwright）"
+  echo "請先執行：npm install 或 npm run setup（離線請先在有網路環境安裝 node_modules）"
+  exit 1
+fi
+
+echo "==> 啟動 Chrome Debug（Port: ${PORT}）"
 "$ROOT_DIR/scripts/launch-chrome.sh" --port "$PORT"
 
 if [[ "$MODE" == "offline" ]]; then
