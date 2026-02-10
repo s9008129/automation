@@ -4,6 +4,7 @@ materials/
 chrome-debug-profile/
 logs/
 .env
+.playwright-browsers/
 *.js
 *.d.ts
 *.js.map

@@ -18,6 +18,10 @@
     .\setup.ps1
 #>
 
+param(
+    [switch]$Offline
+)
+
 $ErrorActionPreference = "Stop"
 
 $LogDir = Join-Path $PSScriptRoot "logs"
@@ -74,6 +78,7 @@ Write-LogOnly "INFO" "OS: $([System.Environment]::OSVersion.VersionString)"
 Write-LogOnly "INFO" "User: $env:USERNAME"
 Write-LogOnly "INFO" "CWD: $PWD"
 Write-LogOnly "INFO" "LogFile: $LogFile"
+Write-LogOnly "INFO" "Offline: $Offline"
 
 Write-Log "INFO" ""
 Write-Log "INFO" "  ========================================" -Color Cyan
@@ -112,6 +117,42 @@ Write-Log "INFO" "  這可能需要 1-2 分鐘..." -Color Gray
 
 Push-Location $PSScriptRoot
 try {
+    if ($Offline) {
+        if (-not (Test-Path (Join-Path $PSScriptRoot "node_modules"))) {
+            Write-Log "ERROR" "  ❌ 離線模式需要已存在的 node_modules" -Color Red
+            Write-Log "INFO" "  請先在有網路的電腦上執行 npm install" -Color Yellow
+            exit 1
+        }
+        Write-Log "INFO" "  ✅ node_modules 已存在" -Color Green
+
+        $pwPaths = @()
+        if ($env:PLAYWRIGHT_BROWSERS_PATH) { $pwPaths += $env:PLAYWRIGHT_BROWSERS_PATH }
+        $pwPaths += (Join-Path $PSScriptRoot ".playwright-browsers")
+        $pwPaths += (Join-Path $env:LOCALAPPDATA "ms-playwright")
+        $found = $false
+        foreach ($p in $pwPaths) {
+            if ($p -and (Test-Path $p)) {
+                Write-Log "INFO" "  ✅ Playwright 瀏覽器路徑: $p" -Color Green
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            Write-Log "WARN" "  ⚠️  找不到 Playwright 瀏覽器目錄" -Color Yellow
+            Write-Log "WARN" "  請先在有網路的電腦上執行: npx playwright install chromium" -Color Yellow
+            Write-Log "WARN" "  或將瀏覽器放到 .playwright-browsers 並設定 PLAYWRIGHT_BROWSERS_PATH" -Color Yellow
+        }
+
+        Write-Log "INFO" "  ✅ 離線模式檢查完成" -Color Green
+        Write-Log "INFO" ""
+        Write-Log "INFO" "  接下來的步驟：" -Color Cyan
+        Write-Log "INFO" "  1. 執行 .\\launch-chrome.ps1 啟動 Chrome Debug 模式" -Color White
+        Write-Log "INFO" "  2. 在 Chrome 中登入你的內部網站" -Color White
+        Write-Log "INFO" "  3. 開啟另一個 PowerShell 視窗" -Color White
+        Write-Log "INFO" "  4. 執行 npm run collect 開始蒐集素材" -Color White
+        exit 0
+    }
+
     $exitCode = Invoke-LoggedCommand -FilePath "npm" -Arguments @("install")
     if ($exitCode -ne 0) {
         Write-Log "ERROR" "  ❌ npm install 失敗 (ExitCode: $exitCode)" -Color Red

@@ -10,7 +10,10 @@
     "collect": "npx tsx collect-materials.ts",
     "collect:auto": "npx tsx collect-materials.ts --auto",
     "collect:snapshot": "npx tsx collect-materials.ts --snapshot",
-    "collect:record": "npx tsx collect-materials.ts --record"
+    "collect:record": "npx tsx collect-materials.ts --record",
+    "setup": "node scripts/run-setup.mjs",
+    "setup:offline": "node scripts/run-setup.mjs --offline",
+    "start:chrome": "node scripts/run-launch-chrome.mjs"
   },
   "keywords": [
     "automation",

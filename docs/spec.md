@@ -216,7 +216,13 @@ equestShutdown() 設定 isShuttingDown = true
 - PowerShell 腳本 MUST 通過 Parser::ParseFile 驗證
 - 啟用 Git Hooks 的指令為 git config core.hooksPath .githooks
 
-### 2.10 安全需求
+### 2.10 macOS / Linux 相容性
+
+- **FR-040**: macOS / Linux MUST 使用 scripts/launch-chrome.sh 啟動 Chrome Debug 模式
+- **FR-041**: macOS / Linux MUST 使用 scripts/setup.sh（或 npm run setup）安裝依賴
+- **FR-042**: 離線環境可使用 npm run setup:offline，需預先準備 node_modules 與 Playwright 瀏覽器目錄（建議 .playwright-browsers/ + PLAYWRIGHT_BROWSERS_PATH）
+
+### 2.11 安全需求
 
 - **FR-027**: 原始碼與錄製檔中 MUST NOT 包含明文憑證，應使用環境變數或 .env 檔案
 - **FR-028**: .gitignore MUST 包含 .env、logs/、materials/、chrome-debug-profile/

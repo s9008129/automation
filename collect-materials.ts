@@ -489,16 +489,44 @@ class MaterialCollector {
         '',
         '   請確認 Chrome 正在以 Debug 模式運行。',
         '',
-        '   Windows 啟動方法（PowerShell）:',
-        '   請執行專案中的 launch-chrome.ps1：',
-        '   .\\launch-chrome.ps1',
-        '',
-        '   或手動啟動：',
-        '   & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" `',
-        `     --remote-debugging-port=${this.config.cdpPort} \``,
-        '     --user-data-dir=".\\chrome-debug-profile"',
-        '',
       ];
+      if (process.platform === 'win32') {
+        guidance.push(
+          '   Windows 啟動方法（PowerShell）:',
+          '   請執行專案中的 launch-chrome.ps1：',
+          '   .\\launch-chrome.ps1',
+          '',
+          '   或手動啟動：',
+          '   & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" `',
+          `     --remote-debugging-port=${this.config.cdpPort} \``,
+          '     --user-data-dir=".\\chrome-debug-profile"',
+          ''
+        );
+      } else if (process.platform === 'darwin') {
+        guidance.push(
+          '   macOS 啟動方法（Terminal）:',
+          '   請執行專案中的 scripts/launch-chrome.sh：',
+          '   ./scripts/launch-chrome.sh',
+          '',
+          '   或手動啟動：',
+          '   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\',
+          `     --remote-debugging-port=${this.config.cdpPort} \\`,
+          '     --user-data-dir="./chrome-debug-profile"',
+          ''
+        );
+      } else {
+        guidance.push(
+          '   Linux 啟動方法（Terminal）:',
+          '   請執行專案中的 scripts/launch-chrome.sh：',
+          '   ./scripts/launch-chrome.sh',
+          '',
+          '   或手動啟動：',
+          '   google-chrome \\',
+          `     --remote-debugging-port=${this.config.cdpPort} \\`,
+          '     --user-data-dir="./chrome-debug-profile"',
+          ''
+        );
+      }
       guidance.forEach(line => {
         console.log(line);
         writeLogLine(line);
@@ -1758,7 +1786,7 @@ main().catch(error => {
   const detail = formatError(error);
   logError(`未預期的錯誤: ${detail.message}`, error);
   log('💡', '疑難排解：', 'WARN');
-  log('💡', '  1. 確認 Chrome 已以 Debug 模式啟動（執行 launch-chrome.ps1）', 'WARN');
+  log('💡', '  1. 確認 Chrome 已以 Debug 模式啟動（Windows: launch-chrome.ps1 / macOS: scripts/launch-chrome.sh）', 'WARN');
   log('💡', '  2. 確認 CDP 端口（預設 9222）沒有被佔用', 'WARN');
   log('💡', '  3. 確認已執行 npm install 安裝依賴', 'WARN');
   process.exit(1);

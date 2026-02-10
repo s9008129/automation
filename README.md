@@ -20,22 +20,45 @@
 
 ### 前置需求
 
-- Windows 11 + PowerShell 7.x
+- Windows 11 + PowerShell 7.x（主要目標環境）
+- macOS / Linux（相容）
 - Node.js v20+
 - Google Chrome
 
 ### 安裝
 
 ```powershell
-# 1. 一鍵安裝所有依賴
+# 1. 一鍵安裝所有依賴（跨平台）
+npm run setup
+```
+
+```powershell
+# Windows（PowerShell）
 .\setup.ps1
 ```
+
+```bash
+# macOS / Linux
+./scripts/setup.sh
+```
+
+> 離線環境請使用 `npm run setup:offline`，並預先準備 `node_modules/` 與 Playwright 瀏覽器（建議放在 `.playwright-browsers/` 並設定 `PLAYWRIGHT_BROWSERS_PATH`）。
 
 ### 使用
 
 ```powershell
 # 2. 啟動 Chrome Debug 模式（獨立 profile，不影響日常使用）
+npm run start:chrome
+```
+
+```powershell
+# Windows（PowerShell）
 .\launch-chrome.ps1
+```
+
+```bash
+# macOS / Linux
+./scripts/launch-chrome.sh
 
 # 3. 在 Chrome 中登入你的內部網站
 
@@ -78,7 +101,11 @@ automation/
 ├── .githooks/
 │   └── pre-commit                # 敏感資訊掃描 hook
 ├── scripts/
-│   └── pre-commit-scan.ps1       # 掃描錄製檔敏感模式
+│   ├── pre-commit-scan.ps1       # 掃描錄製檔敏感模式（PowerShell）
+│   ├── pre-commit-scan.sh        # 掃描錄製檔敏感模式（bash）
+│   ├── launch-chrome.sh          # macOS/Linux Chrome Debug 啟動
+│   ├── setup.sh                  # macOS/Linux 安裝腳本
+│   └── acceptance-macos.sh       # macOS 驗收腳本（含離線 mock）
 ├── docs/
 │   ├── spec.md                   # 功能規格（SDD）
 │   └── 使用指南.md                # 完整使用教學
