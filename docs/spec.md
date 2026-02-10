@@ -333,7 +333,7 @@ px tsc --noEmit
 | sanitizeRecording(filePath) | 清理錄製檔中的敏感資訊 | ⚠️ 密碼欄位的值應替換為 process.env.RECORDING_PASSWORD 佔位符，而非環境變數的實際值 |
 | xtractUrlsFromRecording(filePath) | 從錄製檔提取 page.goto() URL | ⛔ **已停用（T-03 disabled）**：因 session 依賴問題無法可靠運作 |
 | captureSnapshotsForUrls(urls, flowName) | 為提取的 URL 自動擷取 ARIA 快照 | ⛔ **已停用（T-03 disabled）**：搭配 extractUrlsFromRecording 使用，一併停用 |
-| startCodegenRecording(flowName, startUrl, instructions) | 啟動 Playwright Codegen 錄製 | Windows 上使用 cmd.exe /d /s /c 包裝；錄製完成後自動呼叫 sanitizeRecording() |
+| startCodegenRecording(flowName, startUrl, instructions) | 啟動 Playwright Codegen 錄製 | Windows 上使用 cmd.exe /d /s /c 包裝；程式會在啟動前提示使用者在 Codegen 視窗完成錄製後請關閉該視窗；視窗關閉並生成檔案後會自動呼叫 sanitizeRecording()，並在 CLI 顯示後續選單（繼續 / 重新錄製 / 擷取 ARIA / 結束）。 |
 | connect() | 透過 CDP 連接到 Chrome | 使用 connectOverCDP，連接後記錄所有頁面到 log |
 | disconnect() | 斷開與 Chrome 的連接 | 只做 	his.browser = null，NEVER 呼叫 rowser.close() |
 | 

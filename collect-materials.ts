@@ -439,6 +439,14 @@ class MaterialCollector {
       recordings: [],
       errors: [],
     };
+
+    // 保留對已停用 helper 的引用，避免 TypeScript 報 unused 私有方法 (TS6133)
+    if (false) {
+      // @ts-ignore
+      this.extractUrlsFromRecording('');
+      // @ts-ignore
+      this.captureSnapshotsForUrls([], '');
+    }
   }
 
   /** 初始化輸出目錄 */
@@ -1056,17 +1064,22 @@ class MaterialCollector {
   /** 清理錄製檔中的敏感資訊（密碼等） */
   private sanitizeRecording(filePath: string): void {
     let content = fs.readFileSync(filePath, 'utf-8');
-    const envPwd = process.env.RECORDING_PASSWORD || '';
+    // 將錄製檔中 page.fill / page.type 的字串密碼替換為字面量的 process.env 佔位符
+    // 注意：此處不會將 process.env 的實際值寫回檔案，避免明碼入庫
     content = content.replace(
-      /\.fill\(([^,]+),\s*'[^']*'\)/g,
-      `.fill($1, '${envPwd}')`
+      /\.fill\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g,
+      `.fill($1, process.env.RECORDING_PASSWORD)`
     );
-    const header = '// ⚠️ 此錄製檔已經過敏感資訊清理，密碼欄位已替換\n';
+    content = content.replace(
+      /\.type\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g,
+      `.type($1, process.env.RECORDING_PASSWORD)`
+    );
+    const header = '// ⚠️ 此錄製檔已被敏感資訊清理，密碼欄位已替換為 process.env.RECORDING_PASSWORD\n';
     if (!content.startsWith(header)) {
       content = header + content;
     }
     fs.writeFileSync(filePath, content, 'utf-8');
-    log('🔒', `  已清理錄製檔敏感資訊: ${path.basename(filePath)}`);
+    log('🔒', `  已清理錄製檔敏感資訊（使用 process.env 佔位符）: ${path.basename(filePath)}`);
   }
 
   // ── Codegen 錄製 ──
@@ -1320,6 +1333,48 @@ class MaterialCollector {
               file,
               recordedAt: getTaipeiISO(),
             });
+
+            // 錄製完成後立即詢問使用者接下來要做什麼（改善 UX）
+            console.log('');
+            const post = await waitForInput(
+              '  錄製已完成並已產生錄製檔案。請確認你已關閉 Codegen 的瀏覽器視窗。\n' +
+              '  接下來要做什麼？\n' +
+              '    [Enter] 繼續蒐集下一個頁面\n' +
+              '    [r]     重新錄製此流程\n' +
+              '    [a]     擷取目前頁面 ARIA 快照\n' +
+              '    [q]     結束蒐集\n' +
+              '  你的選擇: '
+            );
+
+            if (post.toLowerCase() === 'q') {
+              continueCollecting = false;
+            } else if (post.toLowerCase() === 'r') {
+              const reFile = await this.startCodegenRecording(
+                flowName || `recording-${pageIndex}`,
+                flowUrl || currentUrl,
+                flowInstructions || '請在瀏覽器中操作'
+              );
+              if (reFile) {
+                this.metadata.recordings.push({
+                  name: flowName || `recording-${pageIndex}`,
+                  description: flowInstructions || '',
+                  file: reFile,
+                  recordedAt: getTaipeiISO(),
+                });
+              }
+            } else if (post.toLowerCase() === 'a') {
+              try {
+                const pageForAria = await this.getActivePage();
+                if (this.config.collectOptions.ariaSnapshot) {
+                  const snapName = `${safeFileName(flowName)}-post-aria`;
+                  await this.captureAriaSnapshot(pageForAria, snapName, `Post-record ARIA: ${flowName}`);
+                } else {
+                  log('⚠️', 'ARIA 擷取功能未啟用於這次執行設定');
+                }
+              } catch (err) {
+                logError('Post-record ARIA 失敗', err);
+              }
+            }
           }
         }
       }
@@ -1505,6 +1560,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const runId = getTaipeiTimestampForFile();
   initLogger(runId);
+  // 載入 .env（若有）以供 sanitize 與其他自動化流程使用
+  loadDotEnv();
   writeLogContext('environment', {
     toolVersion: TOOL_VERSION,
     nodeVersion: process.version,
