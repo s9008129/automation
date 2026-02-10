@@ -1,0 +1,82 @@
+#!/bin/bash
+# Pre-commit hook to verify recording sanitization
+# Install: cp .githooks/pre-commit-sanitization-check .git/hooks/pre-commit
+
+echo "🔍 Checking recording files for exposed credentials..."
+
+# Find all TypeScript recording files
+RECORDINGS=$(git diff --cached --name-only --diff-filter=ACM | grep "materials/recordings/.*\.ts$")
+
+if [ -z "$RECORDINGS" ]; then
+  echo "✅ No recording files in this commit"
+  exit 0
+fi
+
+VIOLATIONS_FOUND=0
+
+for file in $RECORDINGS; do
+  echo "   Checking: $file"
+  
+  # Pattern 1: Detect literal strings in .fill() or .type() that look like credentials
+  # Excludes process.env references
+  if grep -Pq '\.(?:fill|type)\([^)]*['\''"][a-zA-Z0-9@._!#$%^&*-]{6,}['\''"]\)' "$file" && \
+     ! grep -q 'process\.env\.' "$file"; then
+    echo "   ❌ SECURITY VIOLATION: Potential credential found in $file"
+    echo "      Pattern: .fill() or .type() with literal string (6+ chars)"
+    grep -Pn '\.(?:fill|type)\([^)]*['\''"][a-zA-Z0-9@._!#$%^&*-]{6,}['\''"]\)' "$file" | head -3
+    VIOLATIONS_FOUND=1
+  fi
+  
+  # Pattern 2: Check for common password patterns
+  if grep -Piq '\.(?:fill|type)\([^)]*['\''"](?:password|passwd|pwd|secret|token|key)[0-9]*['\''"]\)' "$file" && \
+     ! grep -q 'process\.env\.' "$file"; then
+    echo "   ❌ SECURITY VIOLATION: Password-like string in $file"
+    echo "      Pattern: Strings like 'password123', 'secret', 'token'"
+    grep -Pn '\.(?:fill|type)\([^)]*['\''"](?:password|passwd|pwd|secret|token|key)[0-9]*['\''"]\)' "$file" | head -3
+    VIOLATIONS_FOUND=1
+  fi
+  
+  # Pattern 3: Verify sanitization header exists
+  if ! head -n 1 "$file" | grep -q "此錄製檔已被敏感資訊清理\|已被敏感資訊清理"; then
+    echo "   ⚠️  WARNING: $file missing sanitization header"
+    echo "      Expected: // ⚠️ 此錄製檔已被敏感資訊清理..."
+    VIOLATIONS_FOUND=1
+  fi
+  
+  # Pattern 4: Check that password/username fields use env vars
+  password_fields=$(grep -Pn "name\s*:\s*['\"](?:密碼|password|pwd|帳號|username|user|account)['\"]" "$file" | wc -l)
+  env_refs=$(grep -Pn "process\.env\.RECORDING_(?:PASSWORD|USERNAME)" "$file" | wc -l)
+  
+  if [ "$password_fields" -gt 0 ] && [ "$env_refs" -eq 0 ]; then
+    echo "   ❌ SECURITY VIOLATION: $file has password fields but no process.env references"
+    echo "      Found $password_fields credential fields but 0 env var usages"
+    grep -Pn "name\s*:\s*['\"](?:密碼|password|pwd|帳號|username|user|account)['\"]" "$file"
+    VIOLATIONS_FOUND=1
+  fi
+done
+
+echo ""
+
+if [ $VIOLATIONS_FOUND -eq 1 ]; then
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "🚨 COMMIT REJECTED: Recording files contain potential credentials"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+  echo "To fix this:"
+  echo "1. Review the files listed above"
+  echo "2. Ensure all credentials use process.env.RECORDING_PASSWORD or RECORDING_USERNAME"
+  echo "3. Run sanitization manually if needed"
+  echo "4. Stage the fixed files: git add <file>"
+  echo ""
+  echo "Example of correct format:"
+  echo "  await page.getByRole('textbox', { name: '密碼' }).fill(process.env.RECORDING_PASSWORD);"
+  echo ""
+  echo "Example of WRONG format (will be blocked):"
+  echo "  await page.getByRole('textbox', { name: '密碼' }).fill('actual_password');"
+  echo ""
+  exit 1
+fi
+
+echo "✅ All recording files passed security checks"
+echo "   Files checked: $(echo $RECORDINGS | wc -w)"
+exit 0

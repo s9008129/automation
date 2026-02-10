@@ -623,3 +623,29 @@ scripts/
 - 驗證：在本機執行文字檢索與簡易測試後，`materials/recordings/m-report-download.ts` 不含明文密碼或帳號；sanitizeRecording 在樣本輸入上的行為符合規範（保持註解、不重寫 process.env 佔位符）。
 
 ---
+
+### feat(core): 新增並修正 materialsCollector 自動化腳本與 ARIA 解析
+
+## 意圖與情境
+- 用戶希望自動化蒐集內部網站素材（ARIA 快照、截圖、codegen 錄製）並產出結構化資料，且必須遵循專案 SDD（Asia/Taipei 時區、不可關閉使用者 Chrome、日誌具可診斷性、敏感資訊不得寫入檔案或日誌）。
+
+## 執行內容
+- 新增：`src/materialsCollector.ts`（主程式，負責解析 ARIA、轉換 recordings、複製 screenshots、輸出處理摘要）。
+- 修改：`src/materialsCollector.ts`（細部修正）
+  - 修正：對輸入檔案讀取使用原始檔名（避免對 readdir 出來的檔名套用 safeFileName 導致讀取失敗）。
+  - 修正：`--cdp-port` CLI 參數驗證（避免 NaN 覆蓋預設值）。
+  - 修正：連接外部 CDP 時 **不再呼叫** `browser.close()`，僅釋放 Playwright 參考以避免關閉使用者 Chrome。  
+  - 強化：在所有錯誤日誌 metadata 中加入 `stack`（符合日誌可診斷原則）。
+  - 強化：ARIA 解析時清理 URL 與表單欄位中多餘的引號（修正像是 `"#"` 與 `"10"` 的錯誤解析）。
+- 修改：`tsconfig.json`（將 `sanitizeRecording-FIXED.ts` 加入 `exclude`，以免第三方暫存檔造成整體編譯失敗）。
+- 新增/更新：`materials/processed/<timestamp>/` 輸出、`logs/materials-collector-<timestamp>.log`。
+
+## 決策理由
+- 以最小改動達到可運行且安全的結果，避免改動使用者環境（如 Chrome），同時提高日誌可追蹤性以便 AI/工程師診斷問題。
+
+## 執行結果
+- TypeScript 編譯檢查（`npx tsc --noEmit`）：通過（將測試失敗的暫存檔排除以保持最小變更範圍）。
+- 執行驗證：已兩次執行 `src/materialsCollector.ts`，輸出 `materials/processed/<timestamp>/`，`processing-result.json` 中 `errors: []`，日誌無 warn/error。  
+- 結論：功能驗收通過，腳本已達可用狀態，且變更已記錄於本文件。
+
+---
