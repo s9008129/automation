@@ -18,6 +18,7 @@
 import { chromium, type Browser, type Page, type Download } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import { safeFileName, validateUrl } from './materialsCollector';
 
 // ============================================================
 // 常數
@@ -27,6 +28,7 @@ const DEFAULT_CDP_PORT = 9222;
 const TARGET_URL = 'https://www.ncert.nat.gov.tw/index.jsp';
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const PDF_PATTERN = /資安聯防監控月報.*\.pdf/i;
+const STRICT_SECOND_ROW = (process.env.STRICT_SECOND_ROW ?? 'true').toLowerCase() !== 'false';
 
 // ============================================================
 // 工具函數
@@ -49,7 +51,7 @@ function taipeiTimestamp(): string {
 /** 結構化日誌 — 帶台北時間戳記 */
 function log(icon: string, message: string): void {
   const ts = taipeiTimestamp();
-  console.log(`[${ts}] ${icon} ${message}`);
+  console.log('[' + ts + '] ' + icon + ' ' + message);
 }
 
 /** 載入 .env 檔案（不依賴外部套件） */
@@ -72,14 +74,14 @@ function loadDotEnv(): void {
       if (!process.env[key]) process.env[key] = val;
     }
   });
-  log('ℹ️', `.env loaded (${envPath})`);
+  log('ℹ️', '.env loaded (' + envPath + ')');
 }
 
 /** 確保輸出目錄存在 */
 function ensureOutputDir(): void {
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    log('📁', `已建立輸出目錄: ${OUTPUT_DIR}`);
+    log('📁', '已建立輸出目錄: ' + OUTPUT_DIR);
   }
 }
 
@@ -103,7 +105,8 @@ async function main(): Promise<void> {
   }
 
   log('🚀', 'NCERT 月報下載腳本啟動');
-  log('ℹ️', `CDP 連線埠: ${cdpPort}`);
+  log('ℹ️', '環境: ' + process.platform + ' ' + process.version + ' CWD=' + process.cwd());
+  log('ℹ️', 'CDP 連線埠: ' + cdpPort);
 
   // 3. 確保輸出目錄存在
   ensureOutputDir();
@@ -112,9 +115,15 @@ async function main(): Promise<void> {
 
   try {
     // 4. 連接到使用者已開啟的 Chrome（CDP）
-    log('🔗', `正在連接 Chrome CDP (http://localhost:${cdpPort}) ...`);
-    browser = await chromium.connectOverCDP(`http://localhost:${cdpPort}`);
+    log('🔗', '正在連接 Chrome CDP (http://localhost:' + cdpPort + ') ...');
+    browser = await chromium.connectOverCDP('http://localhost:' + cdpPort);
     log('✅', 'Chrome CDP 連接成功');
+
+    const connectedPages = browser.contexts()
+      .flatMap((ctx) => ctx.pages())
+      .map((p) => p.url())
+      .filter((url) => validateUrl(url));
+    log('ℹ️', 'CDP pages: ' + (connectedPages.join(', ') || '(none)'));
 
     // 5. 取得或建立頁面
     const contexts = browser.contexts();
@@ -126,7 +135,7 @@ async function main(): Promise<void> {
         const url = p.url();
         if (url.includes('ncert.nat.gov.tw')) {
           page = p;
-          log('ℹ️', `找到已開啟的 NCERT 頁面: ${url}`);
+          log('ℹ️', '找到已開啟的 NCERT 頁面: ' + url);
           break;
         }
       }
@@ -141,7 +150,10 @@ async function main(): Promise<void> {
     }
 
     // 6. 導航到 NCERT 首頁
-    log('🌐', `正在導航到 ${TARGET_URL} ...`);
+    log('🌐', '正在導航到 ' + TARGET_URL + ' ...');
+    if (!validateUrl(TARGET_URL)) {
+      throw new Error('不允許的 URL: ' + TARGET_URL);
+    }
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
     log('✅', '已載入 NCERT 首頁');
 
@@ -172,45 +184,103 @@ async function main(): Promise<void> {
     } catch (err) {
       // 若未找到，改以直接導航到已知的列表頁面作為 fallback
       log('⚠️', '未找到資安聯防監控月報連結，嘗試直接導航至列表頁 Post2/list.do');
-      await page.goto('https://www.ncert.nat.gov.tw/Post2/list.do', { waitUntil: 'networkidle' });
+      const listUrl = 'https://www.ncert.nat.gov.tw/Post2/list.do';
+      if (!validateUrl(listUrl)) {
+        throw new Error('不允許的 URL: ' + listUrl);
+      }
+      await page.goto(listUrl, { waitUntil: 'networkidle' });
       log('✅', '已直接導航至月報列表頁');
     }
 
-    // 9. 尋找最新月報 PDF 連結並下載
-    log('🔍', '正在尋找最新月報 PDF ...');
-    const pdfLink = page.getByText(PDF_PATTERN);
-    const pdfCount = await pdfLink.count();
-    if (pdfCount === 0) {
-      log('❌', '找不到符合 PDF 的連結，請確認頁面結構或檔名格式');
-      throw new Error('找不到月報 PDF 連結');
+    // 9. 以固定位置（表格由上而下的第二個資料列）選取 PDF 並下載
+    log('🔍', '嘗試從「資安聯防監控月報」表格的第二個資料列取得 PDF 連結...');
+    let targetLink: any = null;
+    try {
+      const section = page.locator('text=/資安聯防監控月報/i');
+      if (await section.count() > 0) {
+        const table = section.first().locator('xpath=following::table[1]');
+        let rows = table.locator('tbody tr');
+        let rowsCount = await rows.count();
+        if (rowsCount === 0) {
+          rows = table.locator('tr');
+          rowsCount = await rows.count();
+        }
+
+        // 逐行檢查是否為 data row（包含 td），並尋找第二個 data row
+        let dataRow: any = null;
+        let seenData = 0;
+        for (let i = 0; i < rowsCount; i++) {
+          const r = rows.nth(i);
+          const tdCount = await r.locator('td').count();
+          if (tdCount === 0) continue; // skip header-like rows
+          if (seenData === 1) { // found second data row
+            dataRow = r;
+            break;
+          }
+          seenData++;
+        }
+
+        if (dataRow) {
+          const linkInRow = dataRow.getByRole('link', { name: PDF_PATTERN });
+          const textInRow = dataRow.getByText(PDF_PATTERN);
+          if ((await linkInRow.count()) > 0) {
+            targetLink = linkInRow.first();
+          } else if ((await textInRow.count()) > 0) {
+            targetLink = textInRow.first();
+          }
+        } else {
+          log('❌', '表格資料列不足或找不到第二列（檢測到的 data rows: ' + seenData + '）');
+          throw new Error('表格資料列不足，無法選取第二列');
+        }
+      } else {
+        log('⚠️', '找不到資安聯防監控月報標題，改以全頁搜尋 PDF');
+      }
+    } catch (e) {
+      log('❌', '解析表格時發生例外: ' + (e as Error).message);
+      throw e;
     }
 
-    const firstPdf = pdfLink.first();
-    await firstPdf.waitFor({ state: 'visible', timeout: 15000 });
+    // 不進行全頁搜尋的 fallback：依 STRICT_SECOND_ROW 決定是否允許表格內第一個 PDF
+    if (!targetLink && !STRICT_SECOND_ROW) {
+      try {
+        const tablePdf = page.getByRole('table').filter({ hasText: '檔案名稱' }).getByText(PDF_PATTERN).first();
+        if ((await tablePdf.count()) > 0) {
+          targetLink = tablePdf;
+          log('⚠️', "STRICT_SECOND_ROW=false，改用表格內第一個 PDF 連結");
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    if (!targetLink) {
+      log('❌', '找不到第二個資料列中可下載的 PDF 連結；依規格停止執行（不做全頁 fallback）');
+      throw new Error('找不到第二列的 PDF 連結，停止執行');
+    }
 
-    const pdfText = await firstPdf.textContent();
-    log('📄', `找到月報: ${pdfText ?? '(unknown)'}`);
+    await targetLink.waitFor({ state: 'visible', timeout: 15000 });
+    const pdfText = await targetLink.textContent();
+    log('📄', '找到目標連結: ' + (pdfText ?? '(unknown)'));
 
     // 觸發下載
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
-    await firstPdf.click();
+    await targetLink.click();
     const download: Download = await downloadPromise;
     const suggested = download.suggestedFilename() ?? '';
-    const fallbackName = `ncert-report-${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+    const fallbackName = 'ncert-report-' + new Date().toISOString().replace(/[:.]/g, '-') + '.pdf';
+
     const filename = suggested || fallbackName;
-    const ensuredPdf = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
-    // 以 basename 避免路徑穿越，並過濾掉不安全字元
-    const rawBase = path.basename(ensuredPdf);
-    const sanitized = rawBase.replace(/[^\w\u4e00-\u9fff\u3040-\u30ff\-\. ]/g, '_');
-    const safeFilename = sanitized || fallbackName;
+    const ensuredPdf = filename.toLowerCase().endsWith('.pdf') ? filename : (filename + '.pdf');
+    // 使用 materialsCollector.safeFileName 進行嚴格淨化，並確保副檔名為 .pdf
+    const safeBase = safeFileName(ensuredPdf);
+    const safeFilename = safeBase.toLowerCase().endsWith('.pdf') ? safeBase : (safeBase + '.pdf');
 
     // 儲存到 output 目錄
     const savePath = path.join(OUTPUT_DIR, safeFilename);
     try {
       await download.saveAs(savePath);
-      log('✅', `月報已儲存至: ${savePath}`);
+      log('✅', '月報已儲存至: ' + savePath);
     } catch (err) {
-      log('❌', `儲存下載檔案失敗: ${(err as Error).message}`);
+      log('❌', '儲存下載檔案失敗: ' + (err as Error).message);
       throw err;
     }
 
@@ -225,9 +295,9 @@ async function main(): Promise<void> {
     log('🎉', 'NCERT 月報下載流程完成！');
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
-    log('❌', `執行失敗: ${err.message}`);
+    log('❌', '執行失敗: ' + err.message);
     if (err.stack) {
-      log('📝', `Stack trace:\n${err.stack}`);
+      log('📝', 'Stack trace:\n' + err.stack);
     }
     process.exit(1);
   } finally {
