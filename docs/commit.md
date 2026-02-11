@@ -1,5 +1,27 @@
 # Commit 與 Push 完整指引
 
+---
+
+feat(automation): 新增 NCERT 月報自動下載腳本
+
+## 意圖與情境
+- 根據使用者提供之 materials/recordings/m-report-download.ts 錄製檔，實作一個可執行的 Playwright TypeScript 自動化腳本，用以連接本機 Chrome 的 Debug 協定（CDP），自動登入 NCERT，下載最新之「資安聯防監控月報」PDF，並在完成後登出。
+
+## 執行內容
+- 新增：`src/download-ncert-report.ts`（使用 `chromium.connectOverCDP`、ARIA 選擇器、下載處理，下載保存至 `./output/`）。
+- 載入 `.env`（支援 NCERT_USERNAME 與 NCERT_PASSWORD），並在缺少環境變數時以清晰錯誤訊息退出。
+- 已執行 `npx tsc --noEmit` 並通過型別檢查；已由 GPT-5.2-Codex 進行代碼審查並確認無重大問題。
+
+## 決策理由
+- 使用 connectOverCDP 以保留使用者 session，避免使用 chromium.launch() 或關閉使用者的 Chrome（遵守 System_Prompt.md 的 non-negotiable 規範）。
+- 憑證不得硬編碼，改以 `process.env` 取得，並提供 `.env` 的支援以便本地測試。
+
+## 驗證結果
+- TypeScript 編譯檢查：通過（`npx tsc --noEmit`）。
+- 下載流程：使用 `page.waitForEvent('download')` 與 `download.saveAs()`，並提供 fallback 檔名以處理無建議檔名的情況。
+
+# Commit 與 Push 完整指引
+
 > **版本**：2.0.0
 > **更新日期**：2026-02-10
 > **適用範圍**：`web-material-collector` 專案所有貢獻者（人類與 AI 自動化）
