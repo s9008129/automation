@@ -8,3 +8,4 @@ logs/
 *.js
 *.d.ts
 *.js.map
+output/
