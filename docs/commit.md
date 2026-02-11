@@ -10,6 +10,27 @@ feat(automation): 新增 NCERT 月報自動下載腳本
 ## 執行內容
 - 新增：`src/download-ncert-report.ts`（使用 `chromium.connectOverCDP`、ARIA 選擇器、下載處理，下載保存至 `./output/`）。
 - 載入 `.env`（支援 NCERT_USERNAME 與 NCERT_PASSWORD），並在缺少環境變數時以清晰錯誤訊息退出。
+
+---
+
+fix(automation): 修正 NCERT 月報下載流程的連結尋找與檔名安全處理
+
+## 意圖與情境
+- 在實際執行時發現：於登入後原本以 ARIA Link 選擇器尋找「資安聯防監控月報」連結會因頁面動態或 UI 結構差異（未蒐集 ARIA 快照或連結不在當前頁面）而超時，導致腳本中止。
+- 另外，下載檔名由伺服器提供的 suggestedFilename() 可能含有不安全字元或路徑，須避免路徑穿越及覆寫風險。
+
+## 執行內容
+- 修改：`src/download-ncert-report.ts`
+  - 在尋找「資安聯防監控月報」連結時改採 case-insensitive 的 ARIA locator（/資安聯防監控月報/i）並 first() 使用；若等待逾時則作為 fallback 直接導航至已知列表頁 `https://www.ncert.nat.gov.tw/Post2/list.do`，提高在不同 UI 結構下的成功率。
+  - 下載檔案時對伺服器建議檔名進行淨化：使用 `path.basename()` 去除路徑，並以正則替換不安全字元為 `_`，若無建議檔名則使用 timestamp-based fallback 名稱。
+  - 其餘遵守 System_Prompt.md 的 Non-Negotiable 規範：使用 connectOverCDP、不可呼叫 browser.close()、所有憑證由 process.env 讀取、輸出至 ./output/、完整錯誤處理與日誌。
+
+## 驗證結果
+- TypeScript 編譯檢查（`npx tsc --noEmit`）：通過。
+- 由 GPT-5.2-Codex 審查已檢視並建議修正，修正已套入並再審查通過。
+- 建議下一步：在使用者環境（有啟用 Chrome Debug）進行一次實際執行測試以驗證整體流程（登入→進入月報頁→下載→登出）在該環境的成功率。
+
+---
 - 已執行 `npx tsc --noEmit` 並通過型別檢查；已由 GPT-5.2-Codex 進行代碼審查並確認無重大問題。
 
 ## 決策理由

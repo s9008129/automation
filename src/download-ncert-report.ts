@@ -160,13 +160,21 @@ async function main(): Promise<void> {
     await page.waitForLoadState('networkidle');
     log('✅', '登入成功');
 
-    // 8. 點擊「資安聯防監控月報」連結
-    log('📋', '正在導航到資安聯防監控月報頁面 ...');
-    const reportLink = page.getByRole('link', { name: '資安聯防監控月報' });
-    await reportLink.waitFor({ state: 'visible', timeout: 15000 });
-    await reportLink.click();
-    await page.waitForLoadState('networkidle');
-    log('✅', '已進入月報頁面');
+    // 8. 點擊或導航到「資安聯防監控月報」頁面（包含 fallback）
+    log('📋', '尋找資安聯防監控月報連結或直接導航...');
+    const reportLinkLocator = page.getByRole('link', { name: /資安聯防監控月報/i });
+    try {
+      // 若能找到直接點擊連結
+      await reportLinkLocator.first().waitFor({ state: 'visible', timeout: 15000 });
+      await reportLinkLocator.first().click();
+      await page.waitForLoadState('networkidle');
+      log('✅', '已進入月報頁面（透過連結）');
+    } catch (err) {
+      // 若未找到，改以直接導航到已知的列表頁面作為 fallback
+      log('⚠️', '未找到資安聯防監控月報連結，嘗試直接導航至列表頁 Post2/list.do');
+      await page.goto('https://www.ncert.nat.gov.tw/Post2/list.do', { waitUntil: 'networkidle' });
+      log('✅', '已直接導航至月報列表頁');
+    }
 
     // 9. 尋找最新月報 PDF 連結並下載
     log('🔍', '正在尋找最新月報 PDF ...');
@@ -188,8 +196,13 @@ async function main(): Promise<void> {
     await firstPdf.click();
     const download: Download = await downloadPromise;
     const suggested = download.suggestedFilename() ?? '';
-    const filename = suggested || `ncert-report-${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
-    const safeFilename = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
+    const fallbackName = `ncert-report-${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+    const filename = suggested || fallbackName;
+    const ensuredPdf = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
+    // 以 basename 避免路徑穿越，並過濾掉不安全字元
+    const rawBase = path.basename(ensuredPdf);
+    const sanitized = rawBase.replace(/[^\w\u4e00-\u9fff\u3040-\u30ff\-\. ]/g, '_');
+    const safeFilename = sanitized || fallbackName;
 
     // 儲存到 output 目錄
     const savePath = path.join(OUTPUT_DIR, safeFilename);

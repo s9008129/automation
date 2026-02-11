@@ -1,0 +1,14 @@
+fix(automation): 修正 NCERT 月報下載流程的連結尋找與檔名安全處理
+
+## 意圖與情境
+- 修正執行時在登入後找不到「資安聯防監控月報」連結導致超時的錯誤，新增 fallback 直接導航至 /Post2/list.do。
+- 防範伺服器回傳的下載建議檔名造成路徑穿越或不安全字元問題，加入 basename 與 sanitized 機制。
+
+## 執行內容
+- 修改：src/download-ncert-report.ts
+  - 使用 case-insensitive ARIA locator 並加入 fallback 導航。
+  - 對 download.suggestedFilename() 做 basename 與字元過濾處理，避免路徑穿越。
+
+## 驗證
+- 已執行 npx tsc --noEmit，通過型別檢查。
+- GPT-5.2-Codex 代碼審查通過。
