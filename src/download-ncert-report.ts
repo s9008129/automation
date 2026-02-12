@@ -172,18 +172,68 @@ async function main(): Promise<void> {
     await page.waitForLoadState('networkidle');
     log('✅', '登入成功');
 
-    // 8. 點擊或導航到「資安聯防監控月報」頁面（包含 fallback）
+    // 8. 點擊或導航到「資安聯防監控月報」頁面（包含 hover 顯示子選單與 fallback）
     log('📋', '尋找資安聯防監控月報連結或直接導航...');
     const reportLinkLocator = page.getByRole('link', { name: /資安聯防監控月報/i });
     try {
-      // 若能找到直接點擊連結
-      await reportLinkLocator.first().waitFor({ state: 'visible', timeout: 15000 });
-      await reportLinkLocator.first().click();
-      await page.waitForLoadState('networkidle');
-      log('✅', '已進入月報頁面（透過連結）');
+      // 先嘗試直接找到可見的連結
+      try {
+        await reportLinkLocator.first().waitFor({ state: 'visible', timeout: 3000 });
+        await reportLinkLocator.first().click();
+        await page.waitForLoadState('networkidle');
+        log('✅', '已進入月報頁面（透過直接可見連結）');
+      } catch (firstErr) {
+        // 直接可見的連結不存在或不可見，嘗試透過父選單 hover/互動揭露子選單
+        const parentCandidates = [
+          page.getByRole('link', { name: /資安訊息公告/i }),
+          page.getByText('資安訊息公告'),
+          page.locator('nav').getByText('資安訊息公告')
+        ];
+        let revealed = false;
+        for (const candidate of parentCandidates) {
+          try {
+            if (!candidate) continue;
+            const cnt = await candidate.count();
+            if (cnt === 0) continue;
+            const pm = candidate.first();
+            await pm.waitFor({ state: 'visible', timeout: 3000 });
+            // 原生 hover
+            try { await pm.hover(); } catch {}
+            // 補事件與 focus
+            try {
+              await pm.dispatchEvent('pointerenter');
+              await pm.dispatchEvent('pointerover');
+              await pm.dispatchEvent('mouseenter');
+              await pm.dispatchEvent('mouseover');
+              await pm.focus();
+            } catch {}
+            // 使用 page.mouse 模擬路徑移動以觸發 CSS/JS
+            try {
+              const box = await pm.boundingBox();
+              if (box) {
+                const cx = box.x + box.width / 2;
+                const cy = box.y + box.height / 2;
+                await page.mouse.move(cx - 10, cy);
+                await page.waitForTimeout(50);
+                await page.mouse.move(cx + 10, cy);
+                await page.waitForTimeout(100);
+              }
+            } catch {}
+            // 嘗試等待並點擊子選單連結
+            try {
+              await reportLinkLocator.first().waitFor({ state: 'visible', timeout: 8000 });
+              await reportLinkLocator.first().click();
+              await page.waitForLoadState('networkidle');
+              log('✅', '已透過互動顯示下拉選單並進入月報頁面');
+              revealed = true;
+              break;
+            } catch {}
+          } catch {}
+        }
+        if (!revealed) throw firstErr;
+      }
     } catch (err) {
-      // 若未找到，改以直接導航到已知的列表頁面作為 fallback
-      log('⚠️', '未找到資安聯防監控月報連結，嘗試直接導航至列表頁 Post2/list.do');
+      log('⚠️', '未找到資安聯防監控月報連結或 hover 顯示失敗，嘗試直接導航至列表頁 Post2/list.do');
       const listUrl = 'https://www.ncert.nat.gov.tw/Post2/list.do';
       if (!validateUrl(listUrl)) {
         throw new Error('不允許的 URL: ' + listUrl);
