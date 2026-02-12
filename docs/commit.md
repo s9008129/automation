@@ -16,7 +16,7 @@
 |------|------|------|
 | `9e1110e` | `src/download-ncert-report.ts`（新增） | 初版 NCERT 月報自動下載腳本：CDP 連線、登入、PDF 下載、登出 |
 | `c16f5f1` | `src/download-ncert-report.ts`（修改） | 改採 case-insensitive ARIA locator，並在隱藏下拉選單中透過 hover 顯示子選單以點選目標連結；若 hover 失敗則採多步驟互動 (hover, pointer events, focus, mouse.move, dispatchEvent) 以提高成功率；找不到時 fallback 至 `Post2/list.do`；檔名淨化使用 `path.basename()` + 正則替換 |
-| `a1b2c3d` | `src/download-ncert-report.ts`（修改） | 強化下拉選單顯示：加入 pointer/mouse enter/over、focus、page.mouse.move 與 dispatchEvent 等多步驟處理以提高 hover 成功率；仍保留原則不關閉使用者 Chrome |
+| `0e23506` | `src/download-ncert-report.ts`（修改） | 強化下拉選單揭露策略：嘗試多個父項 locator（link/text/nav），並使用 hover、dispatchEvent（pointerenter/over/mouseenter/mouseover）、focus 與 page.mouse 模擬路徑移動以提高成功率；若揭露失敗則 fallback 至 `Post2/list.do`；保留 CDP 不關閉使用者 Chrome 的原則 |
 | `55d95a8` | `src/download-ncert-report.ts`（修改） | 引入 `safeFileName()` / `validateUrl()` 共用函數；新增 `STRICT_SECOND_ROW` 旗標控制是否只取第二資料列；改用字串串接取代 template literal；增加 CDP 連線後頁面列表日誌；所有 URL 導航前加入 `validateUrl()` 檢查 |
 | `55d95a8` | `src/materialsCollector.ts`（依賴） | 匯出 `safeFileName()` 與 `validateUrl()` 供下載腳本使用 |
 | `fd40ee5` | `.gitignore`、`output/` 清理 | 將 `output/` 加入 `.gitignore`，移除已誤提交的臨時輸出檔案 |

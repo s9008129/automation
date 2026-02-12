@@ -262,6 +262,17 @@ spawn('npx', args);
 
 ### 錯誤處理
 
+### 隱藏下拉選單處理（最佳實務建議）
+
+- 若目標連結為隱藏在下拉選單中，Prefer 使用「Robust Reveal Strategy」：
+  1. 嘗試找到父項 locator（link/text/nav 等多種候選）
+  2. 原生 pm.hover() 並補發 pointerenter/pointerover/mouseenter/mouseover
+  3. focus 父項並使用 page.mouse.move 模擬滑鼠路徑以觸發 JS/CSS
+  4. 等待子選單的目標 locator 可見，重試數次後若仍失敗則 fallback 至已知列表頁（例如 Post2/list.do）
+- 所有嘗試應有詳細的日誌與關鍵截圖，方便 SRE/AI 進行後續根因分析
+
+### 錯誤處理
+
 ```typescript
 // ✅ 結構化錯誤處理
 try {
