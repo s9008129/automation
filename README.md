@@ -140,6 +140,13 @@ automation/
 
 請參閱 [📖 使用指南](docs/使用指南.md)
 
+### Prompt 範本與 Debug 指南（精簡導覽）
+
+- LLM 生成 Prompt 範本（詳見 docs/使用指南.md#13）
+- LLM Debug Prompt（詳見 docs/使用指南.md#14）
+
+（如需完整範本，請打開使用指南並複製第 13、14 節的內容進入你的 LLM 對話視窗。）
+
 ## ❓ 常見問題
 
 | 問題 | 解決方式 |
