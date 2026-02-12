@@ -536,6 +536,139 @@ efactor | 重構 |
 
 ---
 
+## NCERT 月報下載腳本（download-ncert-report.ts）——SDD 與驗證計畫
+
+本節記錄 download-ncert-report.ts 的規格驅動開發（SDD）要點與可驗證的測試計畫，旨在確保在內部網路（離線／Intranet）環境下可靠、安全與可觀察地自動擷取 NCERT 月報並產出可供 AI 分析之素材（ARIA snapshot、截圖、原始 HTML、下載檔案與結構化日誌）。以下內容以實務可執行的 Given-When-Then 驗收標準與逐步實機測試流程為基礎，並列出穩定性策略與 CI 建議。
+
+### 目的
+- 自動登入 NCERT 系統、定位月報條目、下載月報檔案（PDF）並同時蒐集可供後續 AI/人工作業分析的輔助素材（ARIA snapshot、screenshot、network log、console log、metadata），所有輸出以安全檔名與時區標記歸檔。
+
+### 範圍與限制
+- 範圍：單一 NCERT 站台（內網）之月報列表頁（典型路徑 /Post2/list.do）；會處理動態載入和展開行為，但不負責跨站匯入或外部 API。
+- 限制：必須在離線環境與本專案預先安裝之依賴下運行（Node + tsx、Playwright 已預安裝）；憑證由環境變數提供（禁止將明文寫入程式或日誌）。
+- OS 與執行環境優先支援 Windows 11 + PowerShell 7.x，且所有 timestamp 使用 Asia/Taipei (UTC+8)。
+
+### 功能需求（FR）
+- FR-101：能從環境變數讀取 NCERT 帳號/密碼並以安全方式登入網站（不得在日誌中寫出密碼）。
+- FR-102：定位並導航至月報列表頁（優先使用 /Post2/list.do 作為 fallback）。
+- FR-103：解析列表中每筆月報的 metadata（發布日期、標題、下載連結、id）。
+- FR-104：支援下載單筆或一批（月/年度範圍）之月報 PDF 並以 safeFileName 規則儲存。
+- FR-105：在下載每筆資料前後產生 ARIA snapshot 與 screenshot，儲存對應 metadata 關聯檔。
+- FR-106：提供 Robust Reveal Strategy 以處理隱藏或延遲渲染的表格行或展開內容，並在必要時自動重試或 fallback。
+- FR-107：驗證下載檔案基本完整性（檔頭魔術值、最小檔案大小），並紀錄校驗結果。
+- FR-108：錯誤隔離：單筆失敗不應中止整批作業，並且記錄完整 error stack 與重試次數；若全部筆次失敗則回傳非零退出碼。
+- FR-109：輸出結構化（日誌 JSONL）與可選的人類可讀日誌，均含 Asia/Taipei 時區 timestamp。
+- FR-110：執行前對所有外部 URL 使用 validateUrl() 過濾（只允許 http/https/about），對檔名使用 safeFileName()，並在不合格時跳過與記錄原因。
+
+### 非功能需求
+- 可用性/可靠性：在網路短暫不穩時採用重試（預設 3 次、指數回退），總重試時間上限 30 秒（視情境可配置）。
+- 穩定性：不得強制關閉使用者互動的 Chrome（遵循 connectOverCDP 原則）；對 chrome:// 等內部頁面進行過濾。
+- 日誌：採 JSON Lines（每行一個 JSON 物件）為主，關鍵欄位：ts（ISO8601+08:00）、level、event、ctx（小型物件）。
+- 時區：所有 timestamp 與輸出目錄標記必須使用 Asia/Taipei（UTC+8）。
+- 安全性：憑證只能透過環境變數注入（NCERT_USERNAME / NCERT_PASSWORD）；日誌不得包含敏感內容。
+- 離線能力：不依賴外部第三方 API（所有資源在內網或本地可取得）。
+- 觀察性：必須能產生完整的調試包（ARIA、screenshot、console、network HAR、error stack、metadata）。
+
+### 驗收標準（Given - When - Then）
+- Scenario 1 — 成功下載
+  - Given 已設定有效 NCERT_USERNAME/NCERT_PASSWORD，網站可連線且列表頁可取得，
+  - When 執行腳本下載「最新月份」，
+  - Then 產出下載檔案 output\downloads\{safeFileName}.pdf，日誌包含 event=DOWNLOAD_COMPLETED 且程序以 exit code 0 結束。
+- Scenario 2 — 隱藏行 reveal
+  - Given 月報項目需展開才能顯示下載連結（動態展開）且 initial load 未顯示，
+  - When 腳本執行 Robust Reveal Strategy，
+  - Then 成功擴展並產出 aria-snapshot.json 與 screenshot.png，日誌包含 event=REVEAL_SUCCESS。
+- Scenario 3 — 非法 URL 被過濾
+  - Given 列表內出現不允許的 URL（例如 javascript: 或 data:），
+  - When 腳本解析該項目,
+  - Then 該項目會被跳過並產生 event=VALIDATE_URL_FAILED 記錄，且不會嘗試下載該資源。
+- Scenario 4 — 部分下載失敗但整體容錯
+  - Given 某筆下載在第一次嘗試時失敗（短暫網路或 5xx），
+  - When 腳本依照重試策略重試 3 次仍失敗,
+  - Then 該筆記錄 error stack 與 attempts，繼續處理下一筆，最終產出一份 failed-items.json 並以非零退出碼反映「無成功檔案」情況（若至少有一成功則 exit 0）。
+
+### 測試與驗證計畫
+- 測試要點（整體）
+  - 驗證登入流程、列表解析、reveal 與下載動作；同時驗證所有 debug artifact 是否按規格產出並正確關聯。
+  - 所有測試皆於 PowerShell 7.x 中執行，並使用 Asia/Taipei 時區標示輸出目錄。
+
+- 前置（只需執行一次）
+  1. 安裝相依套件：在專案根目錄執行
+     - npm ci
+  2. 型別檢查（CI 與本地檢查）：
+     - npx tsc --noEmit
+
+- 實機測試步驟（step-by-step；Windows PowerShell 範例）
+  1. 開啟 PowerShell 7.x（pwsh）。
+  2. 建立 timestamped 輸出資料夾：
+     - $ts = (Get-Date).ToString('yyyyMMdd_HHmmss'); $out = "output\ncert-report\$ts"; New-Item -Path $out -ItemType Directory -Force
+  3. 設定必要環境變數（以安全方式注入憑證）：
+     - $env:NCERT_USERNAME = 'your_user'; $env:NCERT_PASSWORD = 'your_password'; $env:OUTPUT_DIR = $out; $env:RECORD_ARTIFACTS = '1'
+  4. 執行前檢查並啟動腳本（同時將 console 與 stderr 寫入檔案）：
+     - npx tsx src\download-ncert-report.ts 2>&1 | Tee-Object -FilePath "$out\console.log"
+       （若腳本支援 --config/--outDir 選項，請加上相應參數）
+  5. 等待腳本完成後，彙整 artifacts（若腳本未自行寫入，手動複製以下檔案至 $out）：
+     - ARIA snapshot(s): $out\aria\{pageSlug}_{ts}.json
+     - Screenshots: $out\screenshots\{pageSlug}_{ts}.png
+     - Network HAR: $out\network\{pageSlug}_{ts}.har
+     - Console log: $out\console.log
+     - Error stacks: $out\errors\{itemId}_{ts}.stack.txt
+     - Metadata: $out\metadata.json
+     - Downloads: $out\downloads\{safeFileName}.pdf
+     - Failed items: $out\failed-items.json (若有)
+  6. 驗證檔案完整性（PowerShell 範例檢查 PDF header）：
+     - $f = "$out\downloads\sample.pdf"; $h = -join (([System.IO.File]::ReadAllBytes($f))[0..3] | ForEach-Object {[char]$_}); if ($h -eq '%PDF' -and (Get-Item $f).Length -gt 10240) { 'PASS' } else { 'FAIL' }
+  7. 驗證日誌與事件：
+     - 確認 $out\console.log 或 JSONL 日誌中包含 DOWNLOAD_COMPLETED、REVEAL_SUCCESS、VALIDATE_URL_FAILED 等事件，並檢查每筆記錄是否含 ts（+08:00）。
+
+- 調試資料清單（必須收集並上傳 / 保留於測試提交包）
+  - ARIA snapshot：materials\aria-snapshots\{pageSlug}_{ts}.json（或 $out\aria\…）
+  - Screenshot：materials\recordings\screenshots\{pageSlug}_{ts}.png（或 $out\screenshots\…）
+  - Console log：$out\console.log（包含腳本 stdout/stderr）
+  - Network log：$out\network\{pageSlug}_{ts}.har（HAR 格式）
+  - Error stack：$out\errors\{itemId}_{ts}.stack.txt
+  - Timestamped metadata：$out\metadata.json（包含 run_id、ts、url、user、out_dir、counts）
+  - 若使用錄製（materials\recordings），請將新錄製放至 materials\recordings 並註明對應測試案例。
+
+- 如何判定測試是否通過（summary）
+  - 自動判定：腳本以 exit code 0 結束且至少一筆檔案成功下載、日誌中存在 DOWNLOAD_COMPLETED 且 downloads 目錄內 PDF 通過魔術字與大小檢查。
+  - 人工判定：檢視 ARIA snapshot & screenshot 是否清楚且與 metadata 關聯，network.har 無致命錯誤，failed-items.json 若存在須有合理記錄。
+
+### 穩定性策略（Robust Reveal Strategy 摘要）
+- 目的：在面對動態渲染或需展開之內容時可靠取得下載連結與可存量資料。
+- 步驟（演算法化描述，不貼程式碼）：
+  1. 嘗試等待目標 selector 為 visible，timeout 初始值 3000ms；visibilityRetry = 3。
+  2. 若不可見，嘗試找到「展開/更多」按鈕並發出 click（最多 revealClickRetry = 3 次），每次 click 後等待 baseDelay = 500ms，採用指數回退（乘以 2）。
+  3. 若仍未見內容，嘗試 scrollIntoView + hover（重試 2 次，各等待 1000ms）。
+  4. 如上述步驟皆失敗且檢查到表格不符合預期（例如缺少第二列——STRICT_SECOND_ROW 檢查），則觸發 fallback：以 /Post2/list.do 作為替代入口重新嘗試一次完整流程。
+  5. 若 fallback 仍失敗，記錄 event=REVEAL_FAILED 與 detail（attempts、lastSelectorState），並將該項目列入 failed-items.json。
+- 預設值：visibilityTimeout=3000ms、visibilityRetry=3、revealClickRetry=3、totalRevealTimeout 上限 10000ms；可由環境變數或設定檔覆寫。
+- 何時採用 fallback：在三類情況下採用 /Post2/list.do fallback —（1）多重 reveal 嘗試失敗且 STRICT_SECOND_ROW 失敗，（2）頁面 content-type 非預期或被攔截，（3）validateUrl 對主頁面失敗時。
+
+### 故障回退與觀察性（Observability）
+- STRICT_SECOND_ROW：若該旗標啟用（預設關閉/可配），當解析表格時若第二列非預期格式即視為嚴重結構變更並觸發 fallback 與高度細節日誌（含 DOM 摘要與 ARIA snapshot）。
+- safeFileName：所有下載檔案與 artifact 檔名必須透過 safeFileName() 處理（移除特殊字、空白、限制長度）；日誌需要記錄原始 title 與 safeFileName 對應以利追蹤。
+- validateUrl：在導航或下載前過濾 URL（只允許 http / https / about），不合法則記錄 VALIDATE_URL_FAILED 並 skip。
+- 當採用 fallback（/Post2/list.do）時，日誌應包含欄位 fallback.source 與 fallback.reason 以利後續 root-cause 分析。
+
+### CI 建議檢查
+- 基本型別與建構檢查：
+  - npx tsc --noEmit
+- 套件安裝（CI job）：
+  - npm ci --silent
+- 靜態檢查與 pre-commit：
+  - 在 CI pipeline 中加入 pre-commit secret scan（例如 trufflehog 或 repo 的 pre-commit hooks），以及檢查 materials/recordings 的錄製不含明文敏感資料。
+- E2E 驗證（代表性驗證）：
+  - 在有可用測試目標（內網測試環境）時，使用一個 sandbox 測試帳號執行腳本並驗證 artifacts，將結果上傳為 pipeline artifacts 供人工審核。
+
+### 日誌格式與範例
+- 建議 JSONL 欄位（必填）：ts (ISO8601+08:00)、level、event、msg（簡短訊息）、ctx（JSON 物件，包含 url、attempt、itemId、safeFileName 等）。
+- 範例（兩行）：
+  - {"ts":"2026-02-09T15:04:05+08:00","level":"INFO","event":"NAVIGATE","msg":"navigate to list","ctx":{"url":"https://ncert.internal/Post2/list.do","attempt":1}}
+  - {"ts":"2026-02-09T15:04:12+08:00","level":"ERROR","event":"DOWNLOAD_FAILED","msg":"timeout after retries","ctx":{"itemId":"2026-01","safeFileName":"NCERT_2026-01.pdf","attempts":3,"stack":"Error: RequestTimeout ..."}}
+
+---
+
 ## 11. 變更記錄
 
 | 版本 | 日期 | 變更內容 |
