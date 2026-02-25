@@ -90,6 +90,7 @@ function ensureOutputDir(): void {
 // ============================================================
 
 async function main(): Promise<void> {
+  // 整體流程：載入設定 → 連上既有 Chrome → 登入 → 找 PDF 並下載 → 登出
   // 1. 載入 .env
   loadDotEnv();
 
@@ -172,7 +173,8 @@ async function main(): Promise<void> {
     await page.waitForLoadState('networkidle');
     log('✅', '登入成功');
 
-    // 8. 點擊或導航到「資安聯防監控月報」頁面（包含 hover 顯示子選單與 fallback）
+    // 8. 點擊或導航到「資安聯防監控月報」頁面
+    //    先走最直覺路徑；若選單需要滑鼠移入才展開，這裡也會嘗試模擬
     log('📋', '尋找資安聯防監控月報連結或直接導航...');
     const reportLinkLocator = page.getByRole('link', { name: /資安聯防監控月報/i });
     try {
@@ -290,7 +292,7 @@ async function main(): Promise<void> {
       throw e;
     }
 
-    // 不進行全頁搜尋的 fallback：依 STRICT_SECOND_ROW 決定是否允許表格內第一個 PDF
+    // 嚴格模式下，只接受「第二列」結果；關閉嚴格模式才退而求其次抓第一個 PDF
     if (!targetLink && !STRICT_SECOND_ROW) {
       try {
         const tablePdf = page.getByRole('table').filter({ hasText: '檔案名稱' }).getByText(PDF_PATTERN).first();
@@ -311,7 +313,7 @@ async function main(): Promise<void> {
     const pdfText = await targetLink.textContent();
     log('📄', '找到目標連結: ' + (pdfText ?? '(unknown)'));
 
-    // 觸發下載
+    // 觸發下載：先建立 waitForEvent，再點擊，避免下載事件太快而漏接
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
     await targetLink.click();
     const download: Download = await downloadPromise;
@@ -324,7 +326,7 @@ async function main(): Promise<void> {
     const safeBase = safeFileName(ensuredPdf);
     const safeFilename = safeBase.toLowerCase().endsWith('.pdf') ? safeBase : (safeBase + '.pdf');
 
-    // 儲存到 output 目錄
+    // 儲存到 output 目錄，檔名會再次淨化，避免路徑字元造成儲存失敗
     const savePath = path.join(OUTPUT_DIR, safeFilename);
     try {
       await download.saveAs(savePath);
@@ -351,7 +353,7 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   } finally {
-    // 清理：僅釋放參考，不關閉使用者的 Chrome
+    // 清理：只釋放程式內參考，不主動關閉使用者本來開著的 Chrome
     browser = null;
     log('🧹', '已釋放 CDP 連線參考（Chrome 保持運行）');
   }

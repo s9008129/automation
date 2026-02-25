@@ -1,6 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 
+/**
+ * 快速檢查 materials 產物是否有成功生成。
+ * 可選擇檢查 ARIA 快照、特定錄製檔，並支援「只看某個時間點之後的新檔案」。
+ */
 const args = process.argv.slice(2);
 let materialsDir = path.join(process.cwd(), 'materials');
 let checkAria = false;
@@ -26,6 +30,7 @@ for (let i = 0; i < args.length; i++) {
 let ok = true;
 
 if (checkAria) {
+  // 檢查 ARIA 快照資料夾與檔案數量，協助快速確認蒐集流程是否真的有輸出
   const ariaDir = path.join(materialsDir, 'aria-snapshots');
   if (!fs.existsSync(ariaDir)) {
     console.error(`❌ 找不到 ARIA 目錄: ${ariaDir}`);
@@ -46,6 +51,7 @@ if (checkAria) {
 }
 
 if (checkRecord) {
+  // 檢查指定錄製檔是否存在，且是否有 sanitize 的安全標頭
   const recPath = path.join(materialsDir, 'recordings', `${checkRecord}.ts`);
   if (!fs.existsSync(recPath)) {
     console.error(`❌ 找不到錄製檔案: ${recPath}`);
@@ -61,4 +67,5 @@ if (checkRecord) {
   }
 }
 
+// 用 exit code 當成 CI / script 判斷依據：0=成功、1=有缺漏
 process.exit(ok ? 0 : 1);

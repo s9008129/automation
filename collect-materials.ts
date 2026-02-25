@@ -1622,6 +1622,7 @@ process.on('SIGTERM', () => {
 });
 
 async function main(): Promise<void> {
+  // 入口流程：初始化日誌與環境，判斷使用者選擇的模式，再交給對應流程執行
   const args = process.argv.slice(2);
   const runId = getTaipeiTimestampForFile();
   initLogger(runId);
@@ -1653,6 +1654,7 @@ async function main(): Promise<void> {
     : undefined;
 
   if (args.includes('--auto')) {
+    // 自動模式：完全依設定檔跑完整批次，適合固定流程
     const config = loadConfig(configPath);
     writeLogContext('mode', { mode: 'auto' });
     writeLogContext('config', redactConfigForLog(config));
@@ -1662,6 +1664,7 @@ async function main(): Promise<void> {
     await collector.collectAll();
 
   } else if (args.includes('--snapshot')) {
+    // 快照模式：只抓當前頁面，快速取得素材
     const config: CollectConfig = {
       projectName: 'quick-snapshot',
       description: '快速快照',
@@ -1684,6 +1687,7 @@ async function main(): Promise<void> {
     await collector.collectSnapshot();
 
   } else if (args.includes('--record')) {
+    // 錄製模式：只啟動 codegen，方便先把互動流程錄下來
     const recordName = args[args.indexOf('--record') + 1] || 'recording';
     const startUrl = args.includes('--url')
       ? args[args.indexOf('--url') + 1]
@@ -1716,6 +1720,7 @@ async function main(): Promise<void> {
     await collector.collectAll();
 
   } else {
+    // 互動選單模式：提供給第一次使用的人，照提示一步一步操作
     console.log('  請選擇蒐集模式：\n');
     console.log('  [1] 📸 互動模式（推薦新手）- 一步一步引導你蒐集');
     console.log('  [2] 🤖 自動模式 - 依設定檔自動蒐集所有頁面');
@@ -1820,6 +1825,7 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
+  // 最外層保護：任何未預期錯誤都在這裡統一提示，避免靜默失敗
   const detail = formatError(error);
   logError(`未預期的錯誤: ${detail.message}`, error);
   log('💡', '疑難排解：', 'WARN');

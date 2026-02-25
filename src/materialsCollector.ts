@@ -236,7 +236,7 @@ class StructuredLogger {
     return this.logFilePath;
   }
 
-  /** 寫入結構化日誌行 */
+  /** 寫入結構化日誌行（同時寫檔 + 印到終端機，方便非技術同仁追流程） */
   private write(level: LogLine['level'], message: string, metadata?: Record<string, unknown>): void {
     const line: LogLine = {
       timestamp: getTaipeiISO(),
@@ -481,6 +481,8 @@ export function parseAriaSnapshot(filePath: string): ParsedAriaSnapshot {
 export function convertRecording(sourceContent: string, recordingName: string): string {
   let output = sourceContent;
 
+  // 以下步驟是把「一次性錄製腳本」整理成「可重複呼叫的模組」：
+  // 先清掉舊匯入與包裝，再補上專案統一格式。
   // 移除 require 形式的匯入
   output = output.replace(/const\s*\{[^}]*\}\s*=\s*require\(['"]playwright['"]\);?\s*/g, '');
   // 移除舊的 import 如果有的話
@@ -569,6 +571,8 @@ ${output.split('\n').map(l => '  ' + l).join('\n')}
  * @param options - CLI 選項
  */
 export async function main(options?: Partial<CliOptions>): Promise<ProcessingResult> {
+  // 主流程採「分階段」處理：ARIA → recordings → screenshots → (可選)CDP 即時擷取
+  // 這樣即使某階段失敗，其他階段仍有機會輸出可用成果。
   const materialsDir = path.resolve(options?.materialsDir ?? DEFAULT_MATERIALS_DIR);
   const cdp = options?.cdp ?? false;
   const cdpPort = options?.cdpPort ?? (Number(process.env.CDP_PORT) || DEFAULT_CDP_PORT);
@@ -802,6 +806,7 @@ export async function main(options?: Partial<CliOptions>): Promise<ProcessingRes
   // ----------------------------------------------------------
   // 6. 產出處理結果摘要
   // ----------------------------------------------------------
+  // 將整趟結果整合成一份 JSON，方便後續交接、除錯或進一步自動化
   const result: ProcessingResult = {
     processedAt: getTaipeiISO(),
     timezone: `${TAIPEI_TZ} (UTC+8)`,
@@ -865,6 +870,7 @@ export async function cli(): Promise<void> {
   try {
     const result = await main(opts);
 
+    // CLI 結尾提供人類可讀摘要，讓使用者不開 JSON 也能快速掌握結果
     console.log('\n✅ 素材處理完成');
     console.log(`   ARIA 快照: ${result.ariaSnapshots.length}`);
     console.log(`   錄製檔:    ${result.recordings.length}`);
