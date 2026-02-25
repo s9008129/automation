@@ -17,15 +17,19 @@
 #>
 
 param(
+    # Debug 連接埠（預設 9222）：素材蒐集工具會透過這個埠連線到 Chrome。
     [int]$Port = 9222
 )
 
+# 遇到未預期錯誤就立即停止，避免後續步驟在不完整狀態下繼續執行。
 $ErrorActionPreference = "Stop"
 
+# 先建立日誌目錄與本次執行專用日誌檔，方便後續回報問題時追蹤。
 $LogDir = Join-Path $PSScriptRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $LogFile = Join-Path $LogDir ("launch-chrome-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
 
+# 同時輸出到畫面與日誌：一般使用者看畫面，技術排查看 log。
 function Write-Log {
     param(
         [string]$Level,
@@ -43,6 +47,7 @@ function Write-Log {
     Write-Host $Message -ForegroundColor $Color
 }
 
+# 只寫入日誌，不打擾畫面輸出（例如環境細節、偵錯資料）。
 function Write-LogOnly {
     param(
         [string]$Level,
@@ -61,7 +66,7 @@ Write-LogOnly "INFO" "CWD: $PWD"
 Write-LogOnly "INFO" "Port: $Port"
 Write-LogOnly "INFO" "LogFile: $LogFile"
 
-# Chrome 常見安裝路徑
+# Chrome 常見安裝路徑（依序檢查，找到就使用）
 $chromePaths = @(
     "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
     "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
@@ -76,6 +81,7 @@ foreach ($p in $chromePaths) {
     }
 }
 
+# 參數/環境驗證：找不到 Chrome 就直接結束，避免後續啟動命令失敗。
 if (-not $chromeExe) {
     Write-Log "INFO" ""
     Write-Log "ERROR" "  ❌ 找不到 Google Chrome！" -Color Red
@@ -88,7 +94,7 @@ if (-not $chromeExe) {
     exit 1
 }
 
-# 建立獨立的使用者設定目錄
+# 建立獨立的使用者設定目錄：不影響你平常使用的 Chrome 設定。
 $profileDir = Join-Path $PSScriptRoot "chrome-debug-profile"
 
 Write-Log "INFO" ""
@@ -102,7 +108,7 @@ Write-Log "INFO" "  Debug 端口:  $Port" -Color Gray
 Write-Log "INFO" "  設定目錄:    $profileDir" -Color Gray
 Write-Log "INFO" ""
 
-# 檢查端口是否已被占用
+# 參數驗證：先確認指定的 Debug 端口是否已被占用。
 $portInUse = Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue
 if ($portInUse) {
     # 檢查是否為我們自己的 debug Chrome
@@ -137,13 +143,14 @@ if ($portInUse) {
     Write-Log "INFO" "  建議先關閉所有 Chrome 視窗，再重新執行此腳本。" -Color Yellow
     Write-Log "INFO" ""
 
+    # 讓使用者自行決定是否強制釋放端口，預設 N（避免誤關閉程式）。
     $continue = Read-Host "  是否要強制關閉佔用端口的程式並重新啟動？(y/N)"
     Write-LogOnly "INFO" "UserContinue: $continue"
     if ($continue -ne 'y' -and $continue -ne 'Y') {
         exit 0
     }
 
-    # 強制關閉佔用端口的程式
+    # 失敗處理：若使用者同意，嘗試關閉占用端口的程序；失敗就明確報錯退出。
     if ($ownerPid) {
         Write-Log "INFO" "  正在關閉佔用端口的程式 (PID: $ownerPid)..." -Color Yellow
         try {
@@ -161,7 +168,7 @@ if ($portInUse) {
 Write-Log "INFO" "  正在啟動 Chrome..." -Color Green
 Write-Log "INFO" ""
 
-# 啟動 Chrome
+# 命令呼叫：以 Debug 參數啟動 Chrome，並指定獨立設定目錄。
 Start-Process -FilePath $chromeExe -ArgumentList @(
     "--remote-debugging-port=$Port",
     "--user-data-dir=$profileDir",
@@ -172,7 +179,7 @@ Start-Process -FilePath $chromeExe -ArgumentList @(
 # 等待 Chrome 啟動
 Start-Sleep -Seconds 3
 
-# 驗證
+# 輸出與驗證：檢查 Debug 端點是否可用，並回報下一步操作。
 Write-Log "INFO" "  驗證 Chrome Debug 模式..." -Color Gray
 try {
     $response = Invoke-RestMethod -Uri "http://localhost:${Port}/json/version" -TimeoutSec 5
@@ -197,6 +204,7 @@ try {
     Write-Log "INFO" "  3. 執行 npm run collect 開始蒐集素材" -Color White
     Write-Log "INFO" ""
 } catch {
+    # 失敗處理：Chrome 可能剛啟動還沒就緒，保留錯誤細節並給人工檢查網址。
     Write-LogOnly "ERROR" $_.Exception.Message
     if ($_.ScriptStackTrace) {
         Write-LogOnly "ERROR" $_.ScriptStackTrace

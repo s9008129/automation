@@ -19,15 +19,19 @@
 #>
 
 param(
+    # -Offline：離線檢查模式（不執行下載/安裝，只檢查既有檔案是否齊全）
     [switch]$Offline
 )
 
+# 全域錯誤策略：發生未處理錯誤就立刻停止，避免安裝流程半套完成。
 $ErrorActionPreference = "Stop"
 
+# 環境準備：建立安裝日誌，方便非技術人員回傳問題時提供完整記錄。
 $LogDir = Join-Path $PSScriptRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $LogFile = Join-Path $LogDir ("setup-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
 
+# 畫面 + 日誌雙寫：即時顯示給使用者，同時保存完整歷程。
 function Write-Log {
     param(
         [string]$Level,
@@ -45,6 +49,7 @@ function Write-Log {
     Write-Host $Message -ForegroundColor $Color
 }
 
+# 只寫日誌（避免把過多技術細節塞滿終端畫面）。
 function Write-LogOnly {
     param(
         [string]$Level,
@@ -55,6 +60,7 @@ function Write-LogOnly {
     Add-Content -Path $LogFile -Value $line
 }
 
+# 命令呼叫包裝器：統一記錄外部命令與輸出，並回傳 ExitCode 供失敗判斷。
 function Invoke-LoggedCommand {
     param(
         [string]$FilePath,
@@ -88,7 +94,7 @@ Write-Log "INFO" ""
 Write-Log "INFO" "  🧾 安裝日誌: $LogFile" -Color Gray
 Write-Log "INFO" ""
 
-# 步驟 1：檢查 Node.js
+# 步驟 1：參數/環境驗證（Node.js 版本至少 v20）
 Write-Log "INFO" "  [1/3] 檢查 Node.js..." -Color White
 try {
     $nodeVersion = (node --version 2>&1 | Select-Object -First 1).ToString().Trim()
@@ -110,7 +116,7 @@ try {
     exit 1
 }
 
-# 步驟 2：安裝 npm 依賴
+# 步驟 2：命令呼叫（npm install），或在 Offline 模式改為「僅檢查」
 Write-Log "INFO" ""
 Write-Log "INFO" "  [2/3] 安裝程式庫（npm install）..." -Color White
 Write-Log "INFO" "  這可能需要 1-2 分鐘..." -Color Gray
@@ -163,7 +169,7 @@ try {
     Pop-Location
 }
 
-# 步驟 3：安裝 Playwright 瀏覽器
+# 步驟 3：命令呼叫（安裝 Playwright Chromium）
 Write-Log "INFO" ""
 Write-Log "INFO" "  [3/3] 安裝 Playwright Chromium 瀏覽器..." -Color White
 Write-Log "INFO" "  這可能需要 2-5 分鐘（下載約 150MB）..." -Color Gray
@@ -180,7 +186,7 @@ try {
     Pop-Location
 }
 
-# 完成
+# 完成輸出：明確列出下一步，讓非技術使用者可直接照做。
 Write-Log "INFO" ""
 Write-Log "INFO" "  ========================================" -Color Green
 Write-Log "INFO" "  🎉 安裝完成！" -Color Green
