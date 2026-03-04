@@ -17,6 +17,7 @@
 
 import { chromium, type Browser, type Page, type Download, type Locator } from 'playwright';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { safeFileName, validateUrl } from './materialsCollector';
 
@@ -27,6 +28,8 @@ import { safeFileName, validateUrl } from './materialsCollector';
 const DEFAULT_CDP_PORT = 9222;
 const TARGET_URL = 'https://www.ncert.nat.gov.tw/index.jsp';
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
+const DEFAULT_STABLE_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
+const MIN_VALID_PDF_SIZE_BYTES = 1024;
 const PDF_PATTERN = /\.pdf/i;
 const REPORT_FILE_PATTERN = /資安聯防監控月報/i;
 const THREAT_INDICATOR_PATTERN = /威脅指標/i;
@@ -85,6 +88,40 @@ function ensureOutputDir(): void {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     log('📁', '已建立輸出目錄: ' + OUTPUT_DIR);
   }
+}
+
+function resolveStableDownloadDir(): string {
+  const configuredDir = (process.env.NCERT_STABLE_DOWNLOAD_DIR ?? '').trim();
+  return configuredDir ? path.resolve(configuredDir) : DEFAULT_STABLE_DOWNLOAD_DIR;
+}
+
+function verifyPdfIntegrity(filePath: string, minSizeBytes = MIN_VALID_PDF_SIZE_BYTES): number {
+  if (!fs.existsSync(filePath)) {
+    throw new Error('找不到下載檔案: ' + filePath);
+  }
+
+  const stat = fs.statSync(filePath);
+  if (stat.size < minSizeBytes) {
+    throw new Error(
+      'PDF 檔案過小，疑似錯誤頁（' + stat.size + ' bytes < ' + minSizeBytes + ' bytes）: ' + filePath
+    );
+  }
+
+  const headerBuffer = Buffer.alloc(5);
+  const fd = fs.openSync(filePath, 'r');
+  let bytesRead = 0;
+  try {
+    bytesRead = fs.readSync(fd, headerBuffer, 0, headerBuffer.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const header = headerBuffer.toString('utf8', 0, bytesRead);
+  if (!header.startsWith('%PDF')) {
+    throw new Error('檔案非有效 PDF（缺少 %PDF 檔頭）: ' + filePath);
+  }
+
+  return stat.size;
 }
 
 type ParsedUploadDate = {
@@ -188,6 +225,14 @@ async function main(): Promise<void> {
 
   // 3. 確保輸出目錄存在
   ensureOutputDir();
+  const stableDownloadDir = resolveStableDownloadDir();
+  fs.mkdirSync(stableDownloadDir, { recursive: true });
+  log(
+    'ℹ️',
+    '下載落地策略：專案輸出=' + OUTPUT_DIR + '；穩定落地=' + stableDownloadDir
+    + ((process.env.NCERT_STABLE_DOWNLOAD_DIR ?? '').trim() ? ' (NCERT_STABLE_DOWNLOAD_DIR)' : ' (系統 Downloads)')
+  );
+  log('ℹ️', '說明：Chrome 下載列可能顯示暫存位置，請以上述落地路徑為準');
 
   let browser: Browser | null = null;
 
@@ -594,6 +639,11 @@ async function main(): Promise<void> {
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
     await targetLink.click();
     const download: Download = await downloadPromise;
+    const downloadFailure = await download.failure();
+    if (downloadFailure) {
+      log('❌', '下載失敗: ' + downloadFailure);
+      throw new Error('下載失敗: ' + downloadFailure);
+    }
     const suggested = download.suggestedFilename() ?? '';
     const fallbackName = 'ncert-report-' + new Date().toISOString().replace(/[:.]/g, '-') + '.pdf';
 
@@ -607,7 +657,17 @@ async function main(): Promise<void> {
     const savePath = path.join(OUTPUT_DIR, safeFilename);
     try {
       await download.saveAs(savePath);
-      log('✅', '月報已儲存至: ' + savePath);
+      const outputFileSize = verifyPdfIntegrity(savePath);
+      log('✅', '月報已儲存至專案 output: ' + savePath + ' (' + outputFileSize + ' bytes)');
+
+      const stableSavePath = path.join(stableDownloadDir, safeFilename);
+      if (path.resolve(stableSavePath) === path.resolve(savePath)) {
+        log('ℹ️', '穩定落地目錄與 output 相同，略過同步複製: ' + stableSavePath);
+      } else {
+        fs.copyFileSync(savePath, stableSavePath);
+        const stableFileSize = verifyPdfIntegrity(stableSavePath);
+        log('✅', '已同步可見下載檔案至: ' + stableSavePath + ' (' + stableFileSize + ' bytes)');
+      }
     } catch (err) {
       log('❌', '儲存下載檔案失敗: ' + (err as Error).message);
       throw err;
