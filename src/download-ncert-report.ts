@@ -435,6 +435,7 @@ async function main(): Promise<void> {
 
           for (let j = 0; j < pdfTextsCount; j++) {
             const textMatch = pdfTextsInRow.nth(j);
+            let matchedClickableAncestor = false;
             const textBasedCandidates = [
               textMatch.locator('xpath=ancestor-or-self::a[1]'),
               textMatch.locator('xpath=ancestor-or-self::*[@role="link"][1]'),
@@ -444,7 +445,12 @@ async function main(): Promise<void> {
             for (const candidate of textBasedCandidates) {
               if (await candidate.count() === 0) continue;
               await addPdfCandidate(candidate.first(), dataRowIndex, rowText, uploadDate);
+              matchedClickableAncestor = true;
               break;
+            }
+            if (!matchedClickableAncestor) {
+              const textSnippet = ((await textMatch.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+              log('⚠️', '第' + dataRowIndex + '列偵測到 PDF 文字但找不到可點擊元素: ' + (textSnippet || '(empty)'));
             }
           }
 
@@ -459,9 +465,10 @@ async function main(): Promise<void> {
           for (let j = 0; j < pdfIconCount; j++) {
             const icon = pdfIconsInRow.nth(j);
             const iconBasedCandidates = [
-              icon.locator('xpath=ancestor::a[1]'),
-              icon.locator('xpath=ancestor::*[@role="link"][1]'),
-              icon.locator('xpath=ancestor::*[@onclick][1]')
+              icon.locator('xpath=ancestor-or-self::a[1]'),
+              icon.locator('xpath=ancestor-or-self::*[@role="link"][1]'),
+              icon.locator('xpath=ancestor-or-self::button[1]'),
+              icon.locator('xpath=ancestor-or-self::*[@onclick][1]')
             ];
             for (const candidate of iconBasedCandidates) {
               if (await candidate.count() === 0) continue;
