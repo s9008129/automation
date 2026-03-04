@@ -116,21 +116,26 @@ function toUtcDayKey(year: number, month: number, day: number): number | null {
 }
 
 function parseUploadDateFromText(text: string): ParsedUploadDate | null {
-  const datePattern = /(^|[^\d])(\d{3,4})[\/-](0?[1-9]|1[0-2])[\/-](0?[1-9]|[12]\d|3[01])(?=$|[^\d])/g;
-  const matches = text.matchAll(datePattern);
-  for (const m of matches) {
-    const rawYear = Number(m[2]);
-    const month = Number(m[3]);
-    const day = Number(m[4]);
-    const year = m[2].length === 3 ? rawYear + 1911 : rawYear; // 民國年轉西元
-    const utcDayKey = toUtcDayKey(year, month, day);
-    if (utcDayKey === null) continue;
-    const isoDate = [
-      year.toString().padStart(4, '0'),
-      month.toString().padStart(2, '0'),
-      day.toString().padStart(2, '0')
-    ].join('-');
-    return { isoDate, utcDayKey };
+  const datePatterns = [
+    /(^|[^\d])(\d{3,4})[\/\-.](0?[1-9]|1[0-2])[\/\-.](0?[1-9]|[12]\d|3[01])(?=$|[^\d])/g,
+    /(^|[^\d])(\d{3,4})\s*年\s*(0?[1-9]|1[0-2])\s*月\s*(0?[1-9]|[12]\d|3[01])\s*日(?=$|[^\d])/g
+  ];
+  for (const datePattern of datePatterns) {
+    const matches = text.matchAll(datePattern);
+    for (const m of matches) {
+      const rawYear = Number(m[2]);
+      const month = Number(m[3]);
+      const day = Number(m[4]);
+      const year = m[2].length === 3 ? rawYear + 1911 : rawYear; // 民國年轉西元
+      const utcDayKey = toUtcDayKey(year, month, day);
+      if (utcDayKey === null) continue;
+      const isoDate = [
+        year.toString().padStart(4, '0'),
+        month.toString().padStart(2, '0'),
+        day.toString().padStart(2, '0')
+      ].join('-');
+      return { isoDate, utcDayKey };
+    }
   }
   return null;
 }
