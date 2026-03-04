@@ -15,7 +15,7 @@
  * 離線運作，不依賴任何外部網路。
  */
 
-import { chromium, type Browser, type Page, type Download } from 'playwright';
+import { chromium, type Browser, type Page, type Download, type Locator } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
 import { safeFileName, validateUrl } from './materialsCollector';
@@ -27,8 +27,9 @@ import { safeFileName, validateUrl } from './materialsCollector';
 const DEFAULT_CDP_PORT = 9222;
 const TARGET_URL = 'https://www.ncert.nat.gov.tw/index.jsp';
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
-const PDF_PATTERN = /資安聯防監控月報.*\.pdf/i;
-const STRICT_SECOND_ROW = (process.env.STRICT_SECOND_ROW ?? 'true').toLowerCase() !== 'false';
+const PDF_PATTERN = /\.pdf/i;
+const REPORT_FILE_PATTERN = /資安聯防監控月報/i;
+const THREAT_INDICATOR_PATTERN = /威脅指標/i;
 
 // ============================================================
 // 工具函數
@@ -83,6 +84,71 @@ function ensureOutputDir(): void {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
     log('📁', '已建立輸出目錄: ' + OUTPUT_DIR);
   }
+}
+
+type ParsedUploadDate = {
+  isoDate: string;
+  epochMs: number;
+};
+
+type PdfCandidate = {
+  rowIndex: number;
+  link: Locator;
+  fileName: string;
+  rowText: string;
+  uploadDate: ParsedUploadDate | null;
+};
+
+function toDateEpochMs(year: number, month: number, day: number): number | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    return null;
+  }
+  return d.getTime();
+}
+
+function parseUploadDateFromText(text: string): ParsedUploadDate | null {
+  const datePattern = /(^|[^\d])(\d{3,4})[\/-](\d{1,2})[\/-](\d{1,2})(?!\d)/g;
+  const matches = text.matchAll(datePattern);
+  for (const m of matches) {
+    const rawYear = Number(m[2]);
+    const month = Number(m[3]);
+    const day = Number(m[4]);
+    const year = m[2].length === 3 ? rawYear + 1911 : rawYear; // 民國年轉西元
+    const epochMs = toDateEpochMs(year, month, day);
+    if (epochMs === null) continue;
+    const isoDate = [
+      year.toString().padStart(4, '0'),
+      month.toString().padStart(2, '0'),
+      day.toString().padStart(2, '0')
+    ].join('-');
+    return { isoDate, epochMs };
+  }
+  return null;
+}
+
+function getTaipeiCurrentDate(): ParsedUploadDate {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const year = Number(parts.find((p) => p.type === 'year')?.value ?? '0');
+  const month = Number(parts.find((p) => p.type === 'month')?.value ?? '0');
+  const day = Number(parts.find((p) => p.type === 'day')?.value ?? '0');
+  const epochMs = toDateEpochMs(year, month, day) ?? Date.now();
+  const isoDate = [
+    year.toString().padStart(4, '0'),
+    month.toString().padStart(2, '0'),
+    day.toString().padStart(2, '0')
+  ].join('-');
+  return { isoDate, epochMs };
+}
+
+function isPreferredMonthlyReportFile(fileName: string): boolean {
+  return REPORT_FILE_PATTERN.test(fileName) && !THREAT_INDICATOR_PATTERN.test(fileName);
 }
 
 // ============================================================
@@ -242,9 +308,10 @@ async function main(): Promise<void> {
       log('✅', '已直接導航至月報列表頁');
     }
 
-    // 9. 以固定位置（表格由上而下的第二個資料列）選取 PDF 並下載
-    log('🔍', '嘗試從「資安聯防監控月報」表格的第二個資料列取得 PDF 連結...');
-    let targetLink: any = null;
+    // 9. 從表格候選 PDF 中，選出 uploadDate 最接近 CurrentDate 的檔案
+    log('🔍', '嘗試從「資安聯防監控月報」表格所有 PDF 候選中選取最接近 CurrentDate 的檔案...');
+    let targetLink: Locator | null = null;
+    let selectedCandidate: PdfCandidate | null = null;
     try {
       const section = page.locator('text=/資安聯防監控月報/i');
       if (await section.count() > 0) {
@@ -256,60 +323,104 @@ async function main(): Promise<void> {
           rowsCount = await rows.count();
         }
 
-        // 逐行檢查是否為 data row（包含 td），並尋找第二個 data row
-        let dataRow: any = null;
-        let seenData = 0;
+        const candidates: PdfCandidate[] = [];
+        let dataRowIndex = 0;
         for (let i = 0; i < rowsCount; i++) {
           const r = rows.nth(i);
           const tdCount = await r.locator('td').count();
           if (tdCount === 0) continue; // skip header-like rows
-          if (seenData === 1) { // found second data row
-            dataRow = r;
-            break;
+          dataRowIndex++;
+          const rowText = (await r.innerText()).replace(/\s+/g, ' ').trim();
+          const uploadDate = parseUploadDateFromText(rowText);
+
+          const pdfLinksInRow = r.getByRole('link', { name: PDF_PATTERN });
+          const pdfLinksCount = await pdfLinksInRow.count();
+          for (let j = 0; j < pdfLinksCount; j++) {
+            const link = pdfLinksInRow.nth(j);
+            const fileName = ((await link.textContent()) ?? '').trim() || '(unknown)';
+            candidates.push({
+              rowIndex: dataRowIndex,
+              link,
+              fileName,
+              rowText,
+              uploadDate
+            });
           }
-          seenData++;
         }
 
-        if (dataRow) {
-          const linkInRow = dataRow.getByRole('link', { name: PDF_PATTERN });
-          const textInRow = dataRow.getByText(PDF_PATTERN);
-          if ((await linkInRow.count()) > 0) {
-            targetLink = linkInRow.first();
-          } else if ((await textInRow.count()) > 0) {
-            targetLink = textInRow.first();
-          }
+        if (candidates.length === 0) {
+          log('❌', '表格中找不到可下載的 PDF 候選');
+          throw new Error('找不到可下載的 PDF 候選');
+        }
+
+        const currentDate = getTaipeiCurrentDate();
+        const candidateSummary = candidates.map((c) => ({
+          rowIndex: c.rowIndex,
+          fileName: c.fileName,
+          uploadDate: c.uploadDate?.isoDate ?? null,
+          preferredName: isPreferredMonthlyReportFile(c.fileName)
+        }));
+        log('ℹ️', 'CurrentDate=' + currentDate.isoDate + '，候選 PDF 數=' + candidates.length);
+        log('ℹ️', 'PDF 候選摘要: ' + JSON.stringify(candidateSummary));
+
+        const datedCandidates = candidates.filter((c) => c.uploadDate !== null);
+        if (datedCandidates.length > 0) {
+          const pastOrToday = datedCandidates.filter(
+            (c) => (c.uploadDate as ParsedUploadDate).epochMs <= currentDate.epochMs
+          );
+          const usePastOrToday = pastOrToday.length > 0;
+          const pool = usePastOrToday ? pastOrToday : datedCandidates;
+          const selectionRule = usePastOrToday
+            ? '規則1：uploadDate <= CurrentDate 且最接近者'
+            : '規則2：全部為未來日期，選最接近未來者';
+
+          pool.sort((a, b) => {
+            const aEpoch = (a.uploadDate as ParsedUploadDate).epochMs;
+            const bEpoch = (b.uploadDate as ParsedUploadDate).epochMs;
+            const aDiff = usePastOrToday ? currentDate.epochMs - aEpoch : aEpoch - currentDate.epochMs;
+            const bDiff = usePastOrToday ? currentDate.epochMs - bEpoch : bEpoch - currentDate.epochMs;
+            if (aDiff !== bDiff) return aDiff - bDiff;
+            if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+            const aPreferred = isPreferredMonthlyReportFile(a.fileName) ? 1 : 0;
+            const bPreferred = isPreferredMonthlyReportFile(b.fileName) ? 1 : 0;
+            if (aPreferred !== bPreferred) return bPreferred - aPreferred;
+            return 0;
+          });
+
+          selectedCandidate = pool[0];
+          targetLink = selectedCandidate.link;
+          log('✅', selectionRule + '，已選定: ' + JSON.stringify({
+            rowIndex: selectedCandidate.rowIndex,
+            uploadDate: selectedCandidate.uploadDate?.isoDate ?? null,
+            fileName: selectedCandidate.fileName,
+            preferredName: isPreferredMonthlyReportFile(selectedCandidate.fileName)
+          }));
         } else {
-          log('❌', '表格資料列不足或找不到第二列（檢測到的 data rows: ' + seenData + '）');
-          throw new Error('表格資料列不足，無法選取第二列');
+          selectedCandidate = candidates[0];
+          targetLink = selectedCandidate.link;
+          log('⚠️', '規則4 fallback：所有 PDF 候選皆無法解析日期，改選第一個 PDF: ' + JSON.stringify({
+            rowIndex: selectedCandidate.rowIndex,
+            fileName: selectedCandidate.fileName,
+            rowText: selectedCandidate.rowText
+          }));
         }
       } else {
-        log('⚠️', '找不到資安聯防監控月報標題，改以全頁搜尋 PDF');
+        log('❌', '找不到資安聯防監控月報標題，無法定位目標表格');
+        throw new Error('找不到資安聯防監控月報目標表格');
       }
     } catch (e) {
       log('❌', '解析表格時發生例外: ' + (e as Error).message);
       throw e;
     }
 
-    // 不進行全頁搜尋的 fallback：依 STRICT_SECOND_ROW 決定是否允許表格內第一個 PDF
-    if (!targetLink && !STRICT_SECOND_ROW) {
-      try {
-        const tablePdf = page.getByRole('table').filter({ hasText: '檔案名稱' }).getByText(PDF_PATTERN).first();
-        if ((await tablePdf.count()) > 0) {
-          targetLink = tablePdf;
-          log('⚠️', "STRICT_SECOND_ROW=false，改用表格內第一個 PDF 連結");
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
     if (!targetLink) {
-      log('❌', '找不到第二個資料列中可下載的 PDF 連結；依規格停止執行（不做全頁 fallback）');
-      throw new Error('找不到第二列的 PDF 連結，停止執行');
+      log('❌', '找不到可用的 PDF 連結，停止執行');
+      throw new Error('找不到可用的 PDF 連結');
     }
 
     await targetLink.waitFor({ state: 'visible', timeout: 15000 });
-    const pdfText = await targetLink.textContent();
-    log('📄', '找到目標連結: ' + (pdfText ?? '(unknown)'));
+    const pdfText = (await targetLink.textContent())?.trim() ?? selectedCandidate?.fileName ?? '(unknown)';
+    log('📄', '找到目標連結: ' + pdfText);
 
     // 觸發下載
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
