@@ -124,6 +124,18 @@ function verifyPdfIntegrity(filePath: string, minSizeBytes = MIN_VALID_PDF_SIZE_
   return stat.size;
 }
 
+function resolveNonConflictingPath(targetPath: string): string {
+  if (!fs.existsSync(targetPath)) return targetPath;
+  const parsed = path.parse(targetPath);
+  let suffix = 1;
+  let candidate = path.join(parsed.dir, parsed.name + ' (' + suffix + ')' + parsed.ext);
+  while (fs.existsSync(candidate)) {
+    suffix++;
+    candidate = path.join(parsed.dir, parsed.name + ' (' + suffix + ')' + parsed.ext);
+  }
+  return candidate;
+}
+
 type ParsedUploadDate = {
   isoDate: string;
   utcDayKey: number;
@@ -225,12 +237,26 @@ async function main(): Promise<void> {
 
   // 3. 確保輸出目錄存在
   ensureOutputDir();
-  const stableDownloadDir = resolveStableDownloadDir();
-  fs.mkdirSync(stableDownloadDir, { recursive: true });
+  const preferredStableDownloadDir = resolveStableDownloadDir();
+  const configuredStableSource = (process.env.NCERT_STABLE_DOWNLOAD_DIR ?? '').trim()
+    ? 'NCERT_STABLE_DOWNLOAD_DIR'
+    : '系統 Downloads';
+  let stableDownloadDir = preferredStableDownloadDir;
+  try {
+    fs.mkdirSync(stableDownloadDir, { recursive: true });
+    fs.accessSync(stableDownloadDir, fs.constants.W_OK);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log('⚠️', '穩定落地目錄不可用: ' + stableDownloadDir + '，原因: ' + reason + '；改用專案 output');
+    stableDownloadDir = OUTPUT_DIR;
+  }
+  const stableDirSource = path.resolve(stableDownloadDir) === path.resolve(preferredStableDownloadDir)
+    ? configuredStableSource
+    : 'fallback: 專案 output';
   log(
     'ℹ️',
     '下載落地策略：專案輸出=' + OUTPUT_DIR + '；穩定落地=' + stableDownloadDir
-    + ((process.env.NCERT_STABLE_DOWNLOAD_DIR ?? '').trim() ? ' (NCERT_STABLE_DOWNLOAD_DIR)' : ' (系統 Downloads)')
+    + ' (' + stableDirSource + ')'
   );
   log('ℹ️', '說明：Chrome 下載列可能顯示暫存位置，請以上述落地路徑為準');
 
@@ -654,19 +680,35 @@ async function main(): Promise<void> {
     const safeFilename = safeBase.toLowerCase().endsWith('.pdf') ? safeBase : (safeBase + '.pdf');
 
     // 儲存到 output 目錄
-    const savePath = path.join(OUTPUT_DIR, safeFilename);
+    const intendedSavePath = path.join(OUTPUT_DIR, safeFilename);
+    const savePath = resolveNonConflictingPath(intendedSavePath);
+    if (path.resolve(savePath) !== path.resolve(intendedSavePath)) {
+      log('⚠️', '專案 output 已存在同名檔案，改以新檔名避免覆寫: ' + savePath);
+    }
     try {
       await download.saveAs(savePath);
       const outputFileSize = verifyPdfIntegrity(savePath);
       log('✅', '月報已儲存至專案 output: ' + savePath + ' (' + outputFileSize + ' bytes)');
 
-      const stableSavePath = path.join(stableDownloadDir, safeFilename);
-      if (path.resolve(stableSavePath) === path.resolve(savePath)) {
-        log('ℹ️', '穩定落地目錄與 output 相同，略過同步複製: ' + stableSavePath);
+      let userVisiblePath = savePath;
+      if (path.resolve(stableDownloadDir) === path.resolve(path.dirname(savePath))) {
+        log('ℹ️', '穩定落地目錄與 output 相同，略過同步複製: ' + savePath);
       } else {
+        const intendedStableSavePath = path.join(stableDownloadDir, safeFilename);
+        const stableSavePath = resolveNonConflictingPath(intendedStableSavePath);
+        if (path.resolve(stableSavePath) !== path.resolve(intendedStableSavePath)) {
+          log('⚠️', '穩定落地目錄已存在同名檔案，改以新檔名避免覆寫: ' + stableSavePath);
+        }
         fs.copyFileSync(savePath, stableSavePath);
         const stableFileSize = verifyPdfIntegrity(stableSavePath);
         log('✅', '已同步可見下載檔案至: ' + stableSavePath + ' (' + stableFileSize + ' bytes)');
+        userVisiblePath = stableSavePath;
+      }
+
+      if (path.resolve(userVisiblePath) === path.resolve(savePath)) {
+        log('📍', '檔案位置：' + savePath);
+      } else {
+        log('📍', '檔案位置：可見下載=' + userVisiblePath + '；專案備份=' + savePath);
       }
     } catch (err) {
       log('❌', '儲存下載檔案失敗: ' + (err as Error).message);
