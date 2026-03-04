@@ -326,8 +326,24 @@ async function main(): Promise<void> {
     let selectedCandidate: PdfCandidate | null = null;
     try {
       const section = page.locator('text=/資安聯防監控月報/i');
-      if (await section.count() > 0) {
-        const table = section.first().locator('xpath=following::table[1]');
+      let table: Locator | null = null;
+      const allTables = page.locator('table');
+      const allTableCount = await allTables.count();
+      for (let i = 0; i < allTableCount; i++) {
+        const candidateTable = allTables.nth(i);
+        const tableText = (await candidateTable.innerText()).replace(/\s+/g, ' ');
+        if (!/上傳日期/.test(tableText) || !/檔案名稱/.test(tableText)) continue;
+        if (!/資安聯防監控月報/.test(tableText)) continue;
+        table = candidateTable;
+        break;
+      }
+
+      if (!table && await section.count() > 0) {
+        table = section.first().locator('xpath=following::table[1]');
+        log('⚠️', '未找到符合欄位特徵的目標表格，改用標題後第一個 table fallback');
+      }
+
+      if (table) {
         let rows = table.locator('tbody tr');
         let rowsCount = await rows.count();
         if (rowsCount === 0) {
