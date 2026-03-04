@@ -30,6 +30,7 @@ const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const PDF_PATTERN = /\.pdf/i;
 const REPORT_FILE_PATTERN = /資安聯防監控月報/i;
 const THREAT_INDICATOR_PATTERN = /威脅指標/i;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // ============================================================
 // 工具函數
@@ -88,7 +89,7 @@ function ensureOutputDir(): void {
 
 type ParsedUploadDate = {
   isoDate: string;
-  epochMs: number;
+  utcDayKey: number;
 };
 
 type PdfCandidate = {
@@ -108,22 +109,28 @@ function toDateEpochMs(year: number, month: number, day: number): number | null 
   return d.getTime();
 }
 
+function toUtcDayKey(year: number, month: number, day: number): number | null {
+  const epochMs = toDateEpochMs(year, month, day);
+  if (epochMs === null) return null;
+  return Math.floor(epochMs / MS_PER_DAY);
+}
+
 function parseUploadDateFromText(text: string): ParsedUploadDate | null {
-  const datePattern = /(^|[^\d])(\d{3,4})[\/-](\d{1,2})[\/-](\d{1,2})(?!\d)/g;
+  const datePattern = /(^|[^\d])(\d{3,4})[\/-](0?[1-9]|1[0-2])[\/-](0?[1-9]|[12]\d|3[01])(?=$|[^\d])/g;
   const matches = text.matchAll(datePattern);
   for (const m of matches) {
     const rawYear = Number(m[2]);
     const month = Number(m[3]);
     const day = Number(m[4]);
     const year = m[2].length === 3 ? rawYear + 1911 : rawYear; // 民國年轉西元
-    const epochMs = toDateEpochMs(year, month, day);
-    if (epochMs === null) continue;
+    const utcDayKey = toUtcDayKey(year, month, day);
+    if (utcDayKey === null) continue;
     const isoDate = [
       year.toString().padStart(4, '0'),
       month.toString().padStart(2, '0'),
       day.toString().padStart(2, '0')
     ].join('-');
-    return { isoDate, epochMs };
+    return { isoDate, utcDayKey };
   }
   return null;
 }
@@ -138,13 +145,13 @@ function getTaipeiCurrentDate(): ParsedUploadDate {
   const year = Number(parts.find((p) => p.type === 'year')?.value ?? '0');
   const month = Number(parts.find((p) => p.type === 'month')?.value ?? '0');
   const day = Number(parts.find((p) => p.type === 'day')?.value ?? '0');
-  const epochMs = toDateEpochMs(year, month, day) ?? Date.now();
+  const utcDayKey = toUtcDayKey(year, month, day) ?? Math.floor(Date.now() / MS_PER_DAY);
   const isoDate = [
     year.toString().padStart(4, '0'),
     month.toString().padStart(2, '0'),
     day.toString().padStart(2, '0')
   ].join('-');
-  return { isoDate, epochMs };
+  return { isoDate, utcDayKey };
 }
 
 function isPreferredMonthlyReportFile(fileName: string): boolean {
@@ -366,7 +373,7 @@ async function main(): Promise<void> {
         const datedCandidates = candidates.filter((c) => c.uploadDate !== null);
         if (datedCandidates.length > 0) {
           const pastOrToday = datedCandidates.filter(
-            (c) => (c.uploadDate as ParsedUploadDate).epochMs <= currentDate.epochMs
+            (c) => (c.uploadDate as ParsedUploadDate).utcDayKey <= currentDate.utcDayKey
           );
           const usePastOrToday = pastOrToday.length > 0;
           const pool = usePastOrToday ? pastOrToday : datedCandidates;
@@ -374,16 +381,35 @@ async function main(): Promise<void> {
             ? '規則1：uploadDate <= CurrentDate 且最接近者'
             : '規則2：全部為未來日期，選最接近未來者';
 
+          const tieBreakCandidates = pool.map((c) => {
+            const uploadDayKey = (c.uploadDate as ParsedUploadDate).utcDayKey;
+            const dayDiff = usePastOrToday
+              ? currentDate.utcDayKey - uploadDayKey
+              : uploadDayKey - currentDate.utcDayKey;
+            return {
+              rowIndex: c.rowIndex,
+              fileName: c.fileName,
+              uploadDate: c.uploadDate?.isoDate ?? null,
+              preferredName: isPreferredMonthlyReportFile(c.fileName),
+              dayDiff
+            };
+          });
+          const minDayDiff = Math.min(...tieBreakCandidates.map((c) => c.dayDiff));
+          const topTies = tieBreakCandidates.filter((c) => c.dayDiff === minDayDiff);
+          if (topTies.length > 1) {
+            log('ℹ️', 'Tie-break 啟動（同 dayDiff=' + minDayDiff + '）: ' + JSON.stringify(topTies));
+          }
+
           pool.sort((a, b) => {
-            const aEpoch = (a.uploadDate as ParsedUploadDate).epochMs;
-            const bEpoch = (b.uploadDate as ParsedUploadDate).epochMs;
-            const aDiff = usePastOrToday ? currentDate.epochMs - aEpoch : aEpoch - currentDate.epochMs;
-            const bDiff = usePastOrToday ? currentDate.epochMs - bEpoch : bEpoch - currentDate.epochMs;
+            const aDayKey = (a.uploadDate as ParsedUploadDate).utcDayKey;
+            const bDayKey = (b.uploadDate as ParsedUploadDate).utcDayKey;
+            const aDiff = usePastOrToday ? currentDate.utcDayKey - aDayKey : aDayKey - currentDate.utcDayKey;
+            const bDiff = usePastOrToday ? currentDate.utcDayKey - bDayKey : bDayKey - currentDate.utcDayKey;
             if (aDiff !== bDiff) return aDiff - bDiff;
-            if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
             const aPreferred = isPreferredMonthlyReportFile(a.fileName) ? 1 : 0;
             const bPreferred = isPreferredMonthlyReportFile(b.fileName) ? 1 : 0;
             if (aPreferred !== bPreferred) return bPreferred - aPreferred;
+            if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
             return 0;
           });
 
