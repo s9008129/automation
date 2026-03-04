@@ -336,6 +336,64 @@ async function main(): Promise<void> {
         }
 
         const candidates: PdfCandidate[] = [];
+        const seenCandidateKeys = new Set<string>();
+        const rowDiagnostics: Array<{
+          rowIndex: number;
+          rowTextSummary: string;
+          linkCount: number;
+          textCount: number;
+          hrefCount: number;
+          onclickCount: number;
+          iconCount: number;
+        }> = [];
+        const addPdfCandidate = async (
+          rawCandidate: Locator,
+          rowIndex: number,
+          rowText: string,
+          uploadDate: ParsedUploadDate | null
+        ): Promise<void> => {
+          try {
+            if (await rawCandidate.count() === 0) return;
+            const link = rawCandidate.first();
+            const metadata = await link.evaluate((el) => {
+              const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+              const href = el.getAttribute('href') ?? '';
+              const onclick = el.getAttribute('onclick') ?? '';
+              const ownAlt = el.getAttribute('alt') ?? '';
+              const nestedAlt = el.querySelector('img')?.getAttribute('alt') ?? '';
+              const alt = ownAlt || nestedAlt;
+              const tag = el.tagName.toLowerCase();
+              return { text, href, onclick, alt, tag };
+            });
+            const isPdfCandidate = PDF_PATTERN.test(metadata.text)
+              || PDF_PATTERN.test(metadata.href)
+              || PDF_PATTERN.test(metadata.onclick)
+              || /\bpdf\b/i.test(metadata.alt);
+            if (!isPdfCandidate) return;
+
+            const dedupeKey = [
+              rowIndex,
+              metadata.tag,
+              metadata.href,
+              metadata.onclick,
+              metadata.text,
+              metadata.alt
+            ].join('|');
+            if (seenCandidateKeys.has(dedupeKey)) return;
+            seenCandidateKeys.add(dedupeKey);
+
+            const hrefName = metadata.href.split('#')[0].split('?')[0].split('/').filter(Boolean).pop() ?? '';
+            const fileName = metadata.text || hrefName || metadata.alt || '(unknown)';
+            candidates.push({
+              rowIndex,
+              link,
+              fileName,
+              rowText,
+              uploadDate
+            });
+          } catch {}
+        };
+
         let dataRowIndex = 0;
         for (let i = 0; i < rowsCount; i++) {
           const r = rows.nth(i);
@@ -344,23 +402,79 @@ async function main(): Promise<void> {
           dataRowIndex++;
           const rowText = (await r.innerText()).replace(/\s+/g, ' ').trim();
           const uploadDate = parseUploadDateFromText(rowText);
+          const rowTextSummary = rowText.length > 120 ? rowText.slice(0, 120) + '…' : rowText;
 
           const pdfLinksInRow = r.getByRole('link', { name: PDF_PATTERN });
           const pdfLinksCount = await pdfLinksInRow.count();
+
+          const pdfTextsInRow = r.getByText(PDF_PATTERN);
+          const pdfTextsCount = await pdfTextsInRow.count();
+
+          const hrefPdfCandidatesInRow = r.locator('a[href*=".pdf" i], a[download*=".pdf" i]');
+          const hrefPdfCount = await hrefPdfCandidatesInRow.count();
+
+          const onclickPdfCandidatesInRow = r.locator('[onclick*=".pdf" i]');
+          const onclickPdfCount = await onclickPdfCandidatesInRow.count();
+
+          const pdfIconsInRow = r.locator('img[alt*="pdf" i]');
+          const pdfIconCount = await pdfIconsInRow.count();
+
+          rowDiagnostics.push({
+            rowIndex: dataRowIndex,
+            rowTextSummary,
+            linkCount: pdfLinksCount,
+            textCount: pdfTextsCount,
+            hrefCount: hrefPdfCount,
+            onclickCount: onclickPdfCount,
+            iconCount: pdfIconCount
+          });
+
           for (let j = 0; j < pdfLinksCount; j++) {
-            const link = pdfLinksInRow.nth(j);
-            const fileName = ((await link.textContent()) ?? '').trim() || '(unknown)';
-            candidates.push({
-              rowIndex: dataRowIndex,
-              link,
-              fileName,
-              rowText,
-              uploadDate
-            });
+            await addPdfCandidate(pdfLinksInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < pdfTextsCount; j++) {
+            const textMatch = pdfTextsInRow.nth(j);
+            const textBasedCandidates = [
+              textMatch.locator('xpath=ancestor-or-self::a[1]'),
+              textMatch.locator('xpath=ancestor-or-self::*[@role="link"][1]'),
+              textMatch.locator('xpath=ancestor-or-self::button[1]'),
+              textMatch.locator('xpath=ancestor-or-self::*[@onclick][1]')
+            ];
+            for (const candidate of textBasedCandidates) {
+              if (await candidate.count() === 0) continue;
+              await addPdfCandidate(candidate.first(), dataRowIndex, rowText, uploadDate);
+              break;
+            }
+          }
+
+          for (let j = 0; j < hrefPdfCount; j++) {
+            await addPdfCandidate(hrefPdfCandidatesInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < onclickPdfCount; j++) {
+            await addPdfCandidate(onclickPdfCandidatesInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < pdfIconCount; j++) {
+            const icon = pdfIconsInRow.nth(j);
+            const iconBasedCandidates = [
+              icon.locator('xpath=ancestor::a[1]'),
+              icon.locator('xpath=ancestor::*[@role="link"][1]'),
+              icon.locator('xpath=ancestor::*[@onclick][1]')
+            ];
+            for (const candidate of iconBasedCandidates) {
+              if (await candidate.count() === 0) continue;
+              await addPdfCandidate(candidate.first(), dataRowIndex, rowText, uploadDate);
+              break;
+            }
           }
         }
 
         if (candidates.length === 0) {
+          for (const rowDiagnostic of rowDiagnostics) {
+            log('🔎', 'PDF 候選診斷: ' + JSON.stringify(rowDiagnostic));
+          }
           log('❌', '表格中找不到可下載的 PDF 候選');
           throw new Error('找不到可下載的 PDF 候選');
         }
