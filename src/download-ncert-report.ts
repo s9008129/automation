@@ -2,7 +2,7 @@
  * 🔽 NCERT 資安聯防監控月報 自動下載腳本
  *
  * 連接到使用者已開啟的 Chrome Debug 模式，自動登入 NCERT 網站，
- * 下載最新的資安聯防監控月報 PDF，然後登出。
+ * 下載最新的資安聯防監控月報 PDF，續下載 Post/list.do 的 Excel，然後登出。
  *
  * 執行方式：
  *   npx tsx src/download-ncert-report.ts
@@ -31,6 +31,8 @@ const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const DEFAULT_STABLE_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
 const MIN_VALID_PDF_SIZE_BYTES = 1024;
 const PDF_PATTERN = /\.pdf/i;
+const EXCEL_PATTERN = /\.(xls|xlsx|xlsm|xlsb|csv)/i;
+const EXCEL_KEYWORD_PATTERN = /\bexcel\b|\bxls(x|m|b)?\b|\bcsv\b/i;
 const REPORT_FILE_PATTERN = /資安聯防監控月報/i;
 const THREAT_INDICATOR_PATTERN = /威脅指標/i;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -142,6 +144,14 @@ type ParsedUploadDate = {
 };
 
 type PdfCandidate = {
+  rowIndex: number;
+  link: Locator;
+  fileName: string;
+  rowText: string;
+  uploadDate: ParsedUploadDate | null;
+};
+
+type ExcelCandidate = {
   rowIndex: number;
   link: Locator;
   fileName: string;
@@ -715,7 +725,347 @@ async function main(): Promise<void> {
       throw err;
     }
 
-    // 10. 登出
+    // 10. 續流程：前往 Post/list.do 下載最接近 CurrentDate 的 Excel
+    log('📊', '開始續流程：嘗試下載 Post/list.do 中最接近 CurrentDate 的 Excel');
+    try {
+      const excelListUrl = 'https://www.ncert.nat.gov.tw/Post/list.do';
+      if (!validateUrl(excelListUrl)) {
+        throw new Error('不允許的 URL: ' + excelListUrl);
+      }
+      await page.goto(excelListUrl, { waitUntil: 'networkidle' });
+      log('✅', '已進入 Excel 列表頁: ' + excelListUrl);
+
+      let excelTargetLink: Locator | null = null;
+      let selectedExcelCandidate: ExcelCandidate | null = null;
+      let excelSkipReason = '';
+
+      const section = page.locator('text=/資安聯防監控月報|威脅指標|月報|Excel|XLS/i');
+      let table: Locator | null = null;
+      const allTables = page.locator('table');
+      const allTableCount = await allTables.count();
+      for (let i = 0; i < allTableCount; i++) {
+        const candidateTable = allTables.nth(i);
+        const tableText = (await candidateTable.innerText()).replace(/\s+/g, ' ');
+        if (!/上傳日期/.test(tableText) || !/檔案名稱/.test(tableText)) continue;
+        table = candidateTable;
+        break;
+      }
+
+      if (!table && await section.count() > 0) {
+        table = section.first().locator('xpath=following::table[1]');
+        log('⚠️', 'Excel 未找到符合欄位特徵的表格，改用標題後第一個 table fallback');
+      }
+      if (!table && allTableCount > 0) {
+        table = allTables.first();
+        log('⚠️', 'Excel 無法定位目標區塊，改用第一個 table fallback');
+      }
+
+      if (table) {
+        let rows = table.locator('tbody tr');
+        let rowsCount = await rows.count();
+        if (rowsCount === 0) {
+          rows = table.locator('tr');
+          rowsCount = await rows.count();
+        }
+
+        const candidates: ExcelCandidate[] = [];
+        const seenCandidateKeys = new Set<string>();
+        const rowDiagnostics: Array<{
+          rowIndex: number;
+          rowTextSummary: string;
+          linkCount: number;
+          textCount: number;
+          hrefCount: number;
+          onclickCount: number;
+          iconCount: number;
+        }> = [];
+        const addExcelCandidate = async (
+          rawCandidate: Locator,
+          rowIndex: number,
+          rowText: string,
+          uploadDate: ParsedUploadDate | null
+        ): Promise<void> => {
+          try {
+            if (await rawCandidate.count() === 0) return;
+            const link = rawCandidate.first();
+            const metadata = await link.evaluate((el) => {
+              const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+              const href = el.getAttribute('href') ?? '';
+              const onclick = el.getAttribute('onclick') ?? '';
+              const ownAlt = el.getAttribute('alt') ?? '';
+              const nestedAlt = el.querySelector('img')?.getAttribute('alt') ?? '';
+              const alt = ownAlt || nestedAlt;
+              const title = el.getAttribute('title') ?? '';
+              const ariaLabel = el.getAttribute('aria-label') ?? '';
+              const tag = el.tagName.toLowerCase();
+              return { text, href, onclick, alt, title, ariaLabel, tag };
+            });
+            const isExcelCandidate = EXCEL_PATTERN.test(metadata.text)
+              || EXCEL_PATTERN.test(metadata.href)
+              || EXCEL_PATTERN.test(metadata.onclick)
+              || EXCEL_KEYWORD_PATTERN.test(metadata.text)
+              || EXCEL_KEYWORD_PATTERN.test(metadata.alt)
+              || EXCEL_KEYWORD_PATTERN.test(metadata.title)
+              || EXCEL_KEYWORD_PATTERN.test(metadata.ariaLabel);
+            if (!isExcelCandidate) return;
+
+            const dedupeKey = [
+              rowIndex,
+              metadata.tag,
+              metadata.href,
+              metadata.onclick,
+              metadata.text,
+              metadata.alt,
+              metadata.title,
+              metadata.ariaLabel
+            ].join('|');
+            if (seenCandidateKeys.has(dedupeKey)) return;
+            seenCandidateKeys.add(dedupeKey);
+
+            const hrefName = metadata.href.split('#')[0].split('?')[0].split('/').filter(Boolean).pop() ?? '';
+            const fileName = metadata.text || hrefName || metadata.title || metadata.ariaLabel || metadata.alt || '(unknown)';
+            candidates.push({
+              rowIndex,
+              link,
+              fileName,
+              rowText,
+              uploadDate
+            });
+          } catch {}
+        };
+
+        let dataRowIndex = 0;
+        for (let i = 0; i < rowsCount; i++) {
+          const r = rows.nth(i);
+          const tdCount = await r.locator('td').count();
+          if (tdCount === 0) continue;
+          dataRowIndex++;
+          const rowText = (await r.innerText()).replace(/\s+/g, ' ').trim();
+          const uploadDate = parseUploadDateFromText(rowText);
+          const rowTextSummary = rowText.length > 120 ? rowText.slice(0, 120) + '…' : rowText;
+
+          const excelLinksInRow = r.getByRole('link', { name: /excel|xls|xlsx|xlsm|xlsb|csv/i });
+          const excelLinksCount = await excelLinksInRow.count();
+
+          const excelTextsInRow = r.getByText(/excel|xls|xlsx|xlsm|xlsb|csv/i);
+          const excelTextsCount = await excelTextsInRow.count();
+
+          const hrefExcelCandidatesInRow = r.locator(
+            'a[href*=".xls" i], a[href*=".xlsx" i], a[href*=".xlsm" i], a[href*=".xlsb" i], a[href*=".csv" i], '
+            + 'a[download*=".xls" i], a[download*=".xlsx" i], a[download*=".xlsm" i], a[download*=".xlsb" i], a[download*=".csv" i]'
+          );
+          const hrefExcelCount = await hrefExcelCandidatesInRow.count();
+
+          const onclickExcelCandidatesInRow = r.locator(
+            '[onclick*=".xls" i], [onclick*=".xlsx" i], [onclick*=".xlsm" i], [onclick*=".xlsb" i], [onclick*=".csv" i], [onclick*="excel" i]'
+          );
+          const onclickExcelCount = await onclickExcelCandidatesInRow.count();
+
+          const excelIconsInRow = r.locator(
+            'img[alt*="excel" i], img[alt*="xls" i], img[alt*="xlsx" i], img[src*="excel" i], img[src*="xls" i]'
+          );
+          const excelIconCount = await excelIconsInRow.count();
+
+          rowDiagnostics.push({
+            rowIndex: dataRowIndex,
+            rowTextSummary,
+            linkCount: excelLinksCount,
+            textCount: excelTextsCount,
+            hrefCount: hrefExcelCount,
+            onclickCount: onclickExcelCount,
+            iconCount: excelIconCount
+          });
+
+          for (let j = 0; j < excelLinksCount; j++) {
+            await addExcelCandidate(excelLinksInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < excelTextsCount; j++) {
+            const textMatch = excelTextsInRow.nth(j);
+            let matchedClickableAncestor = false;
+            const textBasedCandidates = [
+              textMatch.locator('xpath=ancestor-or-self::a[1]'),
+              textMatch.locator('xpath=ancestor-or-self::*[@role="link"][1]'),
+              textMatch.locator('xpath=ancestor-or-self::button[1]'),
+              textMatch.locator('xpath=ancestor-or-self::*[@onclick][1]')
+            ];
+            for (const candidate of textBasedCandidates) {
+              if (await candidate.count() === 0) continue;
+              await addExcelCandidate(candidate.first(), dataRowIndex, rowText, uploadDate);
+              matchedClickableAncestor = true;
+              break;
+            }
+            if (!matchedClickableAncestor) {
+              const textSnippet = ((await textMatch.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+              log('⚠️', '第' + dataRowIndex + '列偵測到 Excel 文字但找不到可點擊元素: ' + (textSnippet || '(empty)'));
+            }
+          }
+
+          for (let j = 0; j < hrefExcelCount; j++) {
+            await addExcelCandidate(hrefExcelCandidatesInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < onclickExcelCount; j++) {
+            await addExcelCandidate(onclickExcelCandidatesInRow.nth(j), dataRowIndex, rowText, uploadDate);
+          }
+
+          for (let j = 0; j < excelIconCount; j++) {
+            const icon = excelIconsInRow.nth(j);
+            const iconBasedCandidates = [
+              icon.locator('xpath=ancestor-or-self::a[1]'),
+              icon.locator('xpath=ancestor-or-self::*[@role="link"][1]'),
+              icon.locator('xpath=ancestor-or-self::button[1]'),
+              icon.locator('xpath=ancestor-or-self::*[@onclick][1]')
+            ];
+            for (const candidate of iconBasedCandidates) {
+              if (await candidate.count() === 0) continue;
+              await addExcelCandidate(candidate.first(), dataRowIndex, rowText, uploadDate);
+              break;
+            }
+          }
+        }
+
+        if (candidates.length === 0) {
+          for (const rowDiagnostic of rowDiagnostics) {
+            log('🔎', 'Excel 候選診斷: ' + JSON.stringify(rowDiagnostic));
+          }
+          excelSkipReason = '表格中找不到可下載的 Excel 候選';
+          log('⚠️', excelSkipReason + '（將略過 Excel 並繼續登出）');
+        } else {
+          const currentDate = getTaipeiCurrentDate();
+          const candidateSummary = candidates.map((c) => ({
+            rowIndex: c.rowIndex,
+            fileName: c.fileName,
+            uploadDate: c.uploadDate?.isoDate ?? null
+          }));
+          log('ℹ️', 'CurrentDate=' + currentDate.isoDate + '，候選 Excel 數=' + candidates.length);
+          log('ℹ️', 'Excel 候選摘要: ' + JSON.stringify(candidateSummary));
+
+          const datedCandidates = candidates.filter((c) => c.uploadDate !== null);
+          if (datedCandidates.length > 0) {
+            const pastOrToday = datedCandidates.filter(
+              (c) => (c.uploadDate as ParsedUploadDate).utcDayKey <= currentDate.utcDayKey
+            );
+            const usePastOrToday = pastOrToday.length > 0;
+            const pool = usePastOrToday ? pastOrToday : datedCandidates;
+            const selectionRule = usePastOrToday
+              ? 'Excel 規則1：uploadDate <= CurrentDate 且最接近者'
+              : 'Excel 規則2：全部為未來日期，選最接近未來者';
+
+            const tieBreakCandidates = pool.map((c) => {
+              const uploadDayKey = (c.uploadDate as ParsedUploadDate).utcDayKey;
+              const dayDiff = usePastOrToday
+                ? currentDate.utcDayKey - uploadDayKey
+                : uploadDayKey - currentDate.utcDayKey;
+              return {
+                rowIndex: c.rowIndex,
+                fileName: c.fileName,
+                uploadDate: c.uploadDate?.isoDate ?? null,
+                dayDiff
+              };
+            });
+            const minDayDiff = Math.min(...tieBreakCandidates.map((c) => c.dayDiff));
+            const topTies = tieBreakCandidates.filter((c) => c.dayDiff === minDayDiff);
+            if (topTies.length > 1) {
+              log('ℹ️', 'Excel tie-break 啟動（同 dayDiff=' + minDayDiff + '）: ' + JSON.stringify(topTies));
+            }
+
+            pool.sort((a, b) => {
+              const aDayKey = (a.uploadDate as ParsedUploadDate).utcDayKey;
+              const bDayKey = (b.uploadDate as ParsedUploadDate).utcDayKey;
+              const aDiff = usePastOrToday ? currentDate.utcDayKey - aDayKey : aDayKey - currentDate.utcDayKey;
+              const bDiff = usePastOrToday ? currentDate.utcDayKey - bDayKey : bDayKey - currentDate.utcDayKey;
+              if (aDiff !== bDiff) return aDiff - bDiff;
+              if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+              return 0;
+            });
+
+            selectedExcelCandidate = pool[0];
+            excelTargetLink = selectedExcelCandidate.link;
+            log('✅', selectionRule + '，已選定 Excel: ' + JSON.stringify({
+              rowIndex: selectedExcelCandidate.rowIndex,
+              uploadDate: selectedExcelCandidate.uploadDate?.isoDate ?? null,
+              fileName: selectedExcelCandidate.fileName
+            }));
+          } else {
+            selectedExcelCandidate = candidates[0];
+            excelTargetLink = selectedExcelCandidate.link;
+            log('⚠️', 'Excel 規則 fallback：所有候選皆無法解析日期，改選第一個 Excel: ' + JSON.stringify({
+              rowIndex: selectedExcelCandidate.rowIndex,
+              fileName: selectedExcelCandidate.fileName,
+              rowText: selectedExcelCandidate.rowText
+            }));
+          }
+        }
+      } else {
+        excelSkipReason = '找不到可用表格（包含 fallback）';
+      }
+
+      if (!excelTargetLink) {
+        log('⚠️', 'Excel 續流程未執行下載，原因: ' + (excelSkipReason || '未選定可下載連結'));
+      } else {
+        await excelTargetLink.waitFor({ state: 'visible', timeout: 15000 });
+        const excelText = (await excelTargetLink.textContent())?.trim() ?? selectedExcelCandidate?.fileName ?? '(unknown)';
+        log('📄', '找到 Excel 目標連結: ' + excelText);
+
+        const excelDownloadPromise = page.waitForEvent('download', { timeout: 30000 });
+        await excelTargetLink.click();
+        const excelDownload: Download = await excelDownloadPromise;
+        const excelDownloadFailure = await excelDownload.failure();
+        if (excelDownloadFailure) {
+          throw new Error('Excel 下載失敗: ' + excelDownloadFailure);
+        }
+
+        const excelSuggested = excelDownload.suggestedFilename() ?? '';
+        const excelFallbackName = 'ncert-report-excel-' + new Date().toISOString().replace(/[:.]/g, '-') + '.xlsx';
+        const excelFilename = excelSuggested || excelFallbackName;
+        const safeExcelBase = safeFileName(excelFilename);
+        const safeExcelFilename = path.extname(safeExcelBase)
+          ? safeExcelBase
+          : (safeExcelBase + '.xlsx');
+
+        const intendedExcelSavePath = path.join(OUTPUT_DIR, safeExcelFilename);
+        const excelSavePath = resolveNonConflictingPath(intendedExcelSavePath);
+        if (path.resolve(excelSavePath) !== path.resolve(intendedExcelSavePath)) {
+          log('⚠️', 'Excel 專案 output 已存在同名檔案，改以新檔名避免覆寫: ' + excelSavePath);
+        }
+        await excelDownload.saveAs(excelSavePath);
+        const excelOutputFileSize = fs.statSync(excelSavePath).size;
+        if (excelOutputFileSize <= 0) {
+          throw new Error('Excel 檔案大小為 0 bytes，疑似下載異常: ' + excelSavePath);
+        }
+        log('✅', 'Excel 已儲存至專案 output: ' + excelSavePath + ' (' + excelOutputFileSize + ' bytes)');
+
+        let excelUserVisiblePath = excelSavePath;
+        if (path.resolve(stableDownloadDir) === path.resolve(path.dirname(excelSavePath))) {
+          log('ℹ️', 'Excel 穩定落地目錄與 output 相同，略過同步複製: ' + excelSavePath);
+        } else {
+          const intendedStableExcelPath = path.join(stableDownloadDir, safeExcelFilename);
+          const stableExcelPath = resolveNonConflictingPath(intendedStableExcelPath);
+          if (path.resolve(stableExcelPath) !== path.resolve(intendedStableExcelPath)) {
+            log('⚠️', 'Excel 穩定落地目錄已存在同名檔案，改以新檔名避免覆寫: ' + stableExcelPath);
+          }
+          fs.copyFileSync(excelSavePath, stableExcelPath);
+          const stableExcelSize = fs.statSync(stableExcelPath).size;
+          if (stableExcelSize <= 0) {
+            throw new Error('Excel 穩定落地檔案大小為 0 bytes，疑似複製異常: ' + stableExcelPath);
+          }
+          log('✅', 'Excel 已同步可見下載檔案至: ' + stableExcelPath + ' (' + stableExcelSize + ' bytes)');
+          excelUserVisiblePath = stableExcelPath;
+        }
+
+        if (path.resolve(excelUserVisiblePath) === path.resolve(excelSavePath)) {
+          log('📍', 'Excel 檔案位置：' + excelSavePath);
+        } else {
+          log('📍', 'Excel 檔案位置：可見下載=' + excelUserVisiblePath + '；專案備份=' + excelSavePath);
+        }
+      }
+    } catch (excelError: unknown) {
+      const excelErr = excelError instanceof Error ? excelError : new Error(String(excelError));
+      log('⚠️', 'Excel 續流程失敗，將繼續登出: ' + excelErr.message);
+    }
+
+    // 11. 登出
     log('🚪', '正在登出 ...');
     const logoutLink = page.getByRole('link', { name: '登出' });
     await logoutLink.waitFor({ state: 'visible', timeout: 10000 });
