@@ -31,8 +31,8 @@ const OUTPUT_DIR = path.join(process.cwd(), 'output');
 const DEFAULT_STABLE_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
 const MIN_VALID_PDF_SIZE_BYTES = 1024;
 const PDF_PATTERN = /\.pdf/i;
-const EXCEL_PATTERN = /\.(xls|xlsx|xlsm|xlsb|csv)/i;
-const EXCEL_KEYWORD_PATTERN = /\bexcel\b|\bxls(x|m|b)?\b|\bcsv\b/i;
+const EXCEL_PATTERN = /\.(xls|xlsx|xlsm|xlsb)/i;
+const EXCEL_KEYWORD_PATTERN = /\bexcel\b|\bxls(x|m|b)?\b/i;
 const REPORT_FILE_PATTERN = /資安聯防監控月報/i;
 const THREAT_INDICATOR_PATTERN = /威脅指標/i;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -844,20 +844,20 @@ async function main(): Promise<void> {
           const uploadDate = parseUploadDateFromText(rowText);
           const rowTextSummary = rowText.length > 120 ? rowText.slice(0, 120) + '…' : rowText;
 
-          const excelLinksInRow = r.getByRole('link', { name: /excel|xls|xlsx|xlsm|xlsb|csv/i });
+          const excelLinksInRow = r.getByRole('link', { name: /excel|xls|xlsx|xlsm|xlsb/i });
           const excelLinksCount = await excelLinksInRow.count();
 
-          const excelTextsInRow = r.getByText(/excel|xls|xlsx|xlsm|xlsb|csv/i);
+          const excelTextsInRow = r.getByText(/excel|xls|xlsx|xlsm|xlsb/i);
           const excelTextsCount = await excelTextsInRow.count();
 
           const hrefExcelCandidatesInRow = r.locator(
-            'a[href*=".xls" i], a[href*=".xlsx" i], a[href*=".xlsm" i], a[href*=".xlsb" i], a[href*=".csv" i], '
-            + 'a[download*=".xls" i], a[download*=".xlsx" i], a[download*=".xlsm" i], a[download*=".xlsb" i], a[download*=".csv" i]'
+            'a[href*=".xls" i], a[href*=".xlsx" i], a[href*=".xlsm" i], a[href*=".xlsb" i], '
+            + 'a[download*=".xls" i], a[download*=".xlsx" i], a[download*=".xlsm" i], a[download*=".xlsb" i]'
           );
           const hrefExcelCount = await hrefExcelCandidatesInRow.count();
 
           const onclickExcelCandidatesInRow = r.locator(
-            '[onclick*=".xls" i], [onclick*=".xlsx" i], [onclick*=".xlsm" i], [onclick*=".xlsb" i], [onclick*=".csv" i], [onclick*="excel" i]'
+            '[onclick*=".xls" i], [onclick*=".xlsx" i], [onclick*=".xlsm" i], [onclick*=".xlsb" i], [onclick*="excel" i]'
           );
           const onclickExcelCount = await onclickExcelCandidatesInRow.count();
 
