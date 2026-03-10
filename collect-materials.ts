@@ -120,6 +120,25 @@ interface ErrorRecord {
   stack?: string;
 }
 
+interface MenuChoice {
+  key: string;
+  label: string;
+  description?: string;
+}
+
+type InteractiveStage = 'capture' | 'recording';
+
+interface RecordingPlan {
+  name: string;
+  startUrl: string;
+  instructions: string;
+}
+
+interface InteractivePageCaptureResult {
+  pageMeta: PageMetadata;
+  currentUrl: string;
+}
+
 // ============================================================
 // 常數
 // ============================================================
@@ -133,6 +152,7 @@ const LOG_DIR = path.join(process.cwd(), 'logs');
 
 let logFilePath: string | null = null;
 const logBuffer: string[] = [];
+let shutdownRequested = false;
 
 // 台北時間
 function getTaipeiTime(): string {
@@ -318,16 +338,78 @@ function waitForInput(prompt: string): Promise<string> {
       input: process.stdin,
       output: process.stdout,
     });
-    const cleanup = () => { try { rl.close(); } catch { /* ignore */ } };
-    rl.question(prompt, answer => {
-      cleanup();
-      resolve(answer.trim());
-    });
-    rl.on('error', () => {
-      cleanup();
-      resolve('');
-    });
+    let settled = false;
+    const handleSigint = () => finish('');
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      process.off('SIGINT', handleSigint);
+      try { rl.close(); } catch { /* ignore */ }
+      resolve(value.trim());
+    };
+    process.once('SIGINT', handleSigint);
+    rl.question(prompt, answer => finish(answer));
+    rl.on('close', () => finish(''));
+    rl.on('error', () => finish(''));
   });
+}
+
+function printInteractiveLines(lines: string[]): void {
+  for (const line of lines) {
+    console.log(line);
+    writeLogLine(line);
+  }
+}
+
+async function waitForRequiredInput(prompt: string, emptyMessage: string): Promise<string | null> {
+  while (!shutdownRequested) {
+    const answer = await waitForInput(prompt);
+    if (shutdownRequested) return null;
+    if (answer) {
+      return answer;
+    }
+    log('⚠️', emptyMessage, 'WARN');
+  }
+  return null;
+}
+
+async function promptMenuChoice(
+  title: string,
+  options: MenuChoice[],
+  promptLabel = '  請輸入編號'
+): Promise<string | null> {
+  const validChoices = new Set(options.map(option => option.key));
+
+  while (!shutdownRequested) {
+    const lines = [
+      '',
+      `  ${title}`,
+      ...options.map(option =>
+        `    [${option.key}] ${option.label}${option.description ? ` — ${option.description}` : ''}`
+      ),
+      '',
+    ];
+    printInteractiveLines(lines);
+
+    const answer = await waitForInput(
+      `${promptLabel} (${options.map(option => option.key).join('/')}): `
+    );
+
+    if (shutdownRequested) return null;
+
+    if (validChoices.has(answer)) {
+      writeLogLine(`[${getTaipeiISO()}][INFO] menuChoice "${title}" -> ${answer}`);
+      return answer;
+    }
+
+    log(
+      '⚠️',
+      `無效的選擇：${answer || '(空白)'}。請輸入 ${options.map(option => option.key).join(' / ')}`,
+      'WARN'
+    );
+  }
+
+  return null;
 }
 
 /** 移除 config 中的敏感 action.text 以避免寫入日誌 — Implemented T-03 by claude-opus-4.6 on 2026-02-10 */
@@ -459,6 +541,229 @@ class MaterialCollector {
     }
     ensureDirSync(path.join(this.outputDir, 'recordings'));
     log('📁', `輸出目錄已建立: ${this.outputDir}`);
+  }
+
+  private upsertRecordingMetadata(recording: RecordingMetadata): void {
+    const existingIndex = this.metadata.recordings.findIndex(item => item.file === recording.file);
+    if (existingIndex >= 0) {
+      this.metadata.recordings[existingIndex] = recording;
+    } else {
+      this.metadata.recordings.push(recording);
+    }
+  }
+
+  private printInteractiveWelcome(maxPages: number): void {
+    printInteractiveLines([
+      '  歡迎使用互動模式（推薦新手）',
+      '  這個模式會用選單帶你完成整個流程，不需要記住技術指令。',
+      '  本次工作分成 2 個階段：',
+      '    1. 頁面蒐集：在「已登入的 Chrome」逐頁擷取 ARIA 快照與截圖',
+      '    2. 流程錄製：另外開一個 Playwright 視窗錄下操作流程',
+      '',
+      '  建議順序：先完成頁面蒐集，再進入錄製階段（ARIA-first）。',
+      '  正常流程不需要按 Ctrl+C；Ctrl+C 只用於緊急中止。',
+      `  單次互動模式最多可蒐集 ${maxPages} 頁。`,
+      `  本次輸出目錄：${this.outputDir}`,
+      '',
+    ]);
+  }
+
+  private printStageBanner(stage: InteractiveStage): void {
+    if (stage === 'capture') {
+      printInteractiveLines([
+        '',
+        '  ────────────────────────────────────────────────────────────',
+        '  階段 1/2：頁面蒐集（ARIA-first）',
+        '  請先到已登入的 Chrome，把畫面切到你要蒐集的頁面，再回來依選單操作。',
+        '  每蒐集完一頁，你都可以直接切到錄製階段，不需要中斷程式。',
+        '  ────────────────────────────────────────────────────────────',
+      ]);
+      return;
+    }
+
+    const lines = [
+      '',
+      '  ────────────────────────────────────────────────────────────',
+      '  階段 2/2：流程錄製',
+      '  這個階段會開啟一個新的 Playwright 錄製視窗，和你原本的 Chrome 分開。',
+      '  請在新視窗完成操作，錄製結束時直接關閉該視窗即可。',
+      '  視窗關閉後，請回到這個 PowerShell，依照選單決定下一步。',
+    ];
+
+    if (this.metadata.collectedPages.length === 0) {
+      lines.push('  提醒：你目前還沒有任何 ARIA 快照；若情況允許，建議先回上一階段蒐集關鍵頁面。');
+    }
+
+    lines.push('  ────────────────────────────────────────────────────────────');
+    printInteractiveLines(lines);
+  }
+
+  private printInteractiveProgress(stage: InteractiveStage, pageIndex: number, maxPages: number): void {
+    const lines = [
+      '',
+      '  目前進度摘要',
+      `    - 目前階段：${stage === 'capture' ? '1/2 頁面蒐集' : '2/2 流程錄製'}`,
+      ...(stage === 'capture'
+        ? [`    - 下一個頁次：第 ${pageIndex} 頁（上限 ${maxPages} 頁）`]
+        : []),
+      `    - 已蒐集頁面：${this.metadata.collectedPages.length}`,
+      `    - 已錄製流程：${this.metadata.recordings.length}`,
+      `    - 錯誤：${this.metadata.errors.length}`,
+      `    - 輸出目錄：${this.outputDir}`,
+    ];
+
+    printInteractiveLines(lines);
+  }
+
+  private printPageCaptureSummary(pageMeta: PageMetadata): void {
+    const lines = [
+      '',
+      '  ✅ 這一頁的素材已完成',
+      `    - 頁面名稱：${pageMeta.name}`,
+      `    - 頁面標題：${pageMeta.title || '(無法取得頁面標題)'}`,
+      `    - ARIA 快照：${pageMeta.files.ariaSnapshot || '未產生'}`,
+      `    - 截圖：${pageMeta.files.screenshot || '未產生'}`,
+      ...(this.config.collectOptions.htmlSource
+        ? [`    - HTML 原始碼：${pageMeta.files.htmlSource || '未產生'}`]
+        : []),
+      `    - 目前累計：${this.metadata.collectedPages.length} 頁面 / ${this.metadata.recordings.length} 錄製 / ${this.metadata.errors.length} 錯誤`,
+      '',
+      '  下一步：你可以繼續蒐集下一頁，或直接切換到錄製階段。',
+    ];
+
+    printInteractiveLines(lines);
+  }
+
+  private printRecordingSummary(recording: RecordingMetadata): void {
+    printInteractiveLines([
+      '',
+      '  ✅ 錄製檔已納入本次成果',
+      `    - 流程名稱：${recording.name}`,
+      `    - 錄製檔：${recording.file}`,
+      `    - 目前累計：${this.metadata.collectedPages.length} 頁面 / ${this.metadata.recordings.length} 錄製 / ${this.metadata.errors.length} 錯誤`,
+      '',
+      '  若還要補抓頁面素材，直接回到頁面蒐集階段即可，不需要 Ctrl+C 重跑。',
+    ]);
+  }
+
+  private buildSuggestedRecordingName(lastCapturedPageName: string | null): string {
+    if (lastCapturedPageName) {
+      return `${lastCapturedPageName}-flow`;
+    }
+    return `recording-${this.metadata.recordings.length + 1}`;
+  }
+
+  private async getSuggestedRecordingStartUrl(lastCapturedPageUrl: string | null): Promise<string> {
+    if (lastCapturedPageUrl) {
+      return lastCapturedPageUrl;
+    }
+
+    try {
+      const page = await this.getActivePage();
+      const currentUrl = await this.resolvePageUrl(page);
+      return currentUrl || 'about:blank';
+    } catch {
+      return 'about:blank';
+    }
+  }
+
+  private async captureInteractivePage(pageIndex: number): Promise<InteractivePageCaptureResult | null> {
+    try {
+      const page = await this.getActivePage();
+      const currentUrl = await this.resolvePageUrl(page);
+      const currentTitle = await this.resolvePageTitle(page);
+      const titleDisplay = currentTitle || '(無法取得頁面標題)';
+      const defaultDescription = (currentTitle || '').replace(/\s+/g, ' ').trim().substring(0, 60);
+
+      printInteractiveLines([
+        '',
+        `  目前準備蒐集第 ${pageIndex} 頁`,
+        `    - Chrome 頁面標題：${titleDisplay}`,
+        `    - Chrome 頁面 URL：${currentUrl}`,
+        '',
+        '  請先確認 Chrome 現在顯示的就是你要蒐集的頁面，再輸入下面資訊。',
+      ]);
+
+      const pageName = await waitForRequiredInput(
+        '  頁面名稱（例如：01-login-page）: ',
+        '頁面名稱不能空白，請重新輸入。'
+      );
+      if (!pageName || shutdownRequested || this.isShuttingDown) {
+        return null;
+      }
+
+      const description = await waitForInput(
+        `  頁面說明（Enter 使用「${defaultDescription || pageName}」）: `
+      );
+      if (shutdownRequested || this.isShuttingDown) {
+        return null;
+      }
+
+      const target: PageTarget = {
+        name: pageName,
+        url: currentUrl,
+        description: description || defaultDescription || pageName,
+        waitFor: 'networkidle',
+        actions: [],
+      };
+
+      const pageMeta = await this.collectPage(page, target);
+      this.metadata.collectedPages.push(pageMeta);
+      this.printPageCaptureSummary(pageMeta);
+      return { pageMeta, currentUrl };
+    } catch (error) {
+      const detail = formatError(error);
+      logError(`目前無法擷取頁面: ${detail.message}`, error);
+      this.metadata.errors.push({
+        page: `interactive-page-${pageIndex}`,
+        error: `Interactive capture failed: ${detail.message}`,
+        timestamp: getTaipeiISO(),
+        stack: detail.stack,
+      });
+      printInteractiveLines([
+        '',
+        '  請先確認以下三件事，再重新嘗試：',
+        '    1. Chrome Debug 視窗仍然開著',
+        '    2. 你目前看到的是內部網站頁面，不是 chrome:// 或擴充套件頁面',
+        '    3. 頁面已載入完成後，再回到這裡操作',
+      ]);
+      return null;
+    }
+  }
+
+  private async promptRecordingPlan(
+    suggestedName: string,
+    defaultUrl: string
+  ): Promise<RecordingPlan | null> {
+    const safeDefaultUrl = defaultUrl || 'about:blank';
+    printInteractiveLines([
+      '',
+      '  接下來要設定這次錄製的基本資訊。',
+      '  如果不確定，直接使用預設值即可。',
+    ]);
+
+    const flowName = await waitForInput(`  錄製名稱（Enter 使用「${suggestedName}」）: `);
+    if (shutdownRequested || this.isShuttingDown) {
+      return null;
+    }
+
+    const flowUrl = await waitForInput(`  起始 URL（Enter 使用「${safeDefaultUrl}」）: `);
+    if (shutdownRequested || this.isShuttingDown) {
+      return null;
+    }
+
+    const flowInstructions = await waitForInput(
+      '  操作說明（可選，例：登入後查詢案件並送出）: '
+    );
+    if (shutdownRequested || this.isShuttingDown) {
+      return null;
+    }
+
+    return {
+      name: flowName || suggestedName,
+      startUrl: flowUrl || safeDefaultUrl,
+      instructions: flowInstructions || '請在新視窗中操作要錄製的流程',
+    };
   }
 
   /** 連接到 Chrome CDP */
@@ -1152,22 +1457,26 @@ class MaterialCollector {
   async startCodegenRecording(flowName: string, startUrl: string, instructions: string): Promise<string> {
     logSubSection(`Codegen 錄製: ${flowName}`);
     log('🎬', `準備錄製互動流程: ${flowName}`);
-    console.log('');
-    console.log(`   📋 操作說明: ${instructions}`);
-    console.log(`   🌐 起始 URL: ${startUrl}`);
-    console.log('');
 
     const outputFile = path.join(this.outputDir, 'recordings', `${safeFileName(flowName)}.ts`);
 
-    console.log('   錄製將會開啟一個新的瀏覽器視窗。');
-    console.log('   在新視窗中操作你要錄製的流程。');
-    console.log('   完成後，關閉瀏覽器視窗即可結束錄製。');
-    console.log(`   錄製結果將儲存到: ${outputFile}`);
-    console.log('');
+    printInteractiveLines([
+      '',
+      '  現在要開啟一個「獨立的 Playwright 錄製視窗」。',
+      '  重要提醒：這個新視窗不是你目前已登入的 Chrome，登入狀態可能不同。',
+      '  請在新視窗中做你要錄下的操作；完成後直接關閉該視窗即可結束錄製。',
+      '  視窗關閉後，請回到這個 PowerShell，工具會自動帶你進入下一步。',
+      `  📋 操作說明：${instructions}`,
+      `  🌐 起始 URL：${startUrl}`,
+      `  💾 錄製檔案：${outputFile}`,
+    ]);
 
-    const answer = await waitForInput('   按 Enter 開始錄製（輸入 skip 跳過）: ');
-    if (answer.toLowerCase() === 'skip') {
-      log('⏭️', '已跳過此錄製');
+    const answer = await promptMenuChoice('錄製前確認', [
+      { key: '1', label: '開始錄製', description: '立即開啟新的 Playwright 錄製視窗' },
+      { key: '2', label: '先不錄製，返回上一個選單', description: '不會建立任何錄製檔' },
+    ]);
+    if (!answer || answer === '2') {
+      log('⏭️', shutdownRequested ? '收到中止要求，已取消這次錄製' : '已取消這次錄製，返回上一個選單');
       return '';
     }
 
@@ -1242,9 +1551,15 @@ class MaterialCollector {
         console.log('  │  🔒 敏感資訊已自動清理                    │');
         console.log('  └──────────────────────────────────────────┘');
         console.log('');
+        console.log('  請回到這個 PowerShell，依照後續選單決定下一步。');
+        console.log('');
         return path.basename(outputFile);
       } else {
         log('⚠️', '錄製完成但未產生檔案（可能操作中途關閉）');
+        printInteractiveLines([
+          '  這次沒有產生錄製檔。',
+          '  可能是新視窗一開啟就被關閉，或在錄製過程中直接取消。',
+        ]);
         return '';
       }
     } catch (error) {
@@ -1306,7 +1621,7 @@ class MaterialCollector {
         for (const flow of this.config.interactiveFlows) {
           const file = await this.startCodegenRecording(flow.name, flow.startUrl, flow.instructions);
           if (file) {
-            this.metadata.recordings.push({
+            this.upsertRecordingMetadata({
               name: flow.name,
               description: flow.description,
               file,
@@ -1324,123 +1639,224 @@ class MaterialCollector {
 
   async collectInteractive(): Promise<void> {
     logSection('🎯 互動式素材蒐集');
-    console.log('這個模式會一步一步引導你蒐集素材。');
-    console.log('你只需要在 Chrome 中操作，然後按 Enter 擷取。\n');
-
+    const MAX_PAGES = 100;
     this.initOutputDirs();
+    this.printInteractiveWelcome(MAX_PAGES);
     await this.connect();
 
     try {
       let pageIndex = 1;
-      let continueCollecting = true;
-      const MAX_PAGES = 100;
+      let continueSession = true;
+      let stage: InteractiveStage = 'capture';
+      let announcedStage: InteractiveStage | null = null;
+      let lastCapturedPageUrl: string | null = null;
+      let lastCapturedPageName: string | null = null;
 
-      while (continueCollecting && pageIndex <= MAX_PAGES && !this.isShuttingDown) {
-        console.log('');
-        console.log(`  +---------------------------------------+`);
-        console.log(`  |  第 ${pageIndex} 個頁面                          |`);
-        console.log(`  +---------------------------------------+`);
-        console.log('');
+      while (continueSession && !this.isShuttingDown && !shutdownRequested) {
+        if (stage !== announcedStage) {
+          this.printStageBanner(stage);
+          announcedStage = stage;
+        }
 
-        const page = await this.getActivePage();
-        const currentUrl = await this.resolvePageUrl(page);
-        const currentTitle = await this.resolvePageTitle(page);
+        this.printInteractiveProgress(stage, pageIndex, MAX_PAGES);
 
-        log('📄', `當前頁面: ${currentTitle}`);
-        log('🔗', `URL: ${currentUrl}`);
+        if (stage === 'capture') {
+          if (pageIndex > MAX_PAGES) {
+            log('⚠️', `已達互動模式最多 ${MAX_PAGES} 頁的上限，建議先結束本次蒐集再重新開始。`, 'WARN');
+            const limitChoice = await promptMenuChoice('頁面上限已達，接下來要做什麼？', [
+              { key: '1', label: '切換到錄製階段', description: '繼續錄下操作流程' },
+              { key: '2', label: '結束並產生報告', description: '儲存本次成果' },
+            ]);
 
-        const pageName = await waitForInput('\n  請輸入頁面名稱（例如: 01-login-page）: ');
-        if (!pageName) {
-          log('⚠️', '名稱不能為空，請重新輸入');
+            if (!limitChoice || limitChoice === '2') {
+              continueSession = false;
+              break;
+            }
+
+            stage = 'recording';
+            announcedStage = null;
+            continue;
+          }
+
+          const captureChoice = await promptMenuChoice('頁面蒐集階段：接下來要做什麼？', [
+            { key: '1', label: `蒐集目前 Chrome 頁面（第 ${pageIndex} 頁）`, description: '先把 Chrome 切到正確頁面' },
+            { key: '2', label: '切換到錄製階段', description: '改為錄下互動流程' },
+            { key: '3', label: '結束並產生報告', description: '本次蒐集先到這裡' },
+          ]);
+
+          if (!captureChoice || captureChoice === '3') {
+            continueSession = false;
+            break;
+          }
+
+          if (captureChoice === '2') {
+            stage = 'recording';
+            announcedStage = null;
+            continue;
+          }
+
+          const captureResult = await this.captureInteractivePage(pageIndex);
+          if (!captureResult) {
+            if (shutdownRequested || this.isShuttingDown) {
+              continueSession = false;
+              break;
+            }
+            continue;
+          }
+
+          pageIndex++;
+          lastCapturedPageUrl = captureResult.currentUrl;
+          lastCapturedPageName = captureResult.pageMeta.name;
+
+          const nextAction = await promptMenuChoice('本頁完成，下一步要做什麼？', [
+            { key: '1', label: '繼續蒐集下一個頁面', description: '回到 Chrome 切換到下一頁後再操作' },
+            { key: '2', label: '進入錄製階段', description: '開始錄下操作流程' },
+            { key: '3', label: '結束並產生報告', description: '儲存本次成果' },
+          ]);
+
+          if (!nextAction || nextAction === '3') {
+            continueSession = false;
+            break;
+          }
+
+          if (nextAction === '2') {
+            stage = 'recording';
+            announcedStage = null;
+          }
+
           continue;
         }
 
-        const description = await waitForInput('  請輸入頁面描述（例如: 系統登入頁面）: ');
+        const stageChoice = await promptMenuChoice('錄製階段：接下來要做什麼？', [
+          { key: '1', label: '開始新的錄製', description: '會開新的 Playwright 錄製視窗' },
+          { key: '2', label: '返回頁面蒐集階段', description: '繼續擷取 ARIA 快照與截圖' },
+          { key: '3', label: '結束並產生報告', description: '儲存本次成果' },
+        ]);
 
-        const target: PageTarget = {
-          name: pageName,
-          url: currentUrl,
-          description: description || pageName,
-          waitFor: 'networkidle',
-          actions: [],
-        };
+        if (!stageChoice || stageChoice === '3') {
+          continueSession = false;
+          break;
+        }
 
-        const pageMeta = await this.collectPage(page, target);
-        this.metadata.collectedPages.push(pageMeta);
+        if (stageChoice === '2') {
+          stage = 'capture';
+          announcedStage = null;
+          continue;
+        }
 
-        pageIndex++;
-
-        console.log('');
-        const nextAction = await waitForInput(
-          '  接下來要做什麼？\n' +
-          '    [Enter] 繼續蒐集下一個頁面\n' +
-          '    [r]     錄製互動流程 (codegen)\n' +
-          '    [q]     結束蒐集\n' +
-          '  你的選擇: '
+        let recordingPlan = await this.promptRecordingPlan(
+          this.buildSuggestedRecordingName(lastCapturedPageName),
+          await this.getSuggestedRecordingStartUrl(lastCapturedPageUrl)
         );
 
-        if (nextAction.toLowerCase() === 'q') {
-          continueCollecting = false;
-        } else if (nextAction.toLowerCase() === 'r') {
-          const flowName = await waitForInput('  錄製名稱: ');
-          const flowUrl = await waitForInput('  起始 URL（Enter 使用當前頁面）: ');
-          const flowInstructions = await waitForInput('  操作說明: ');
+        if (!recordingPlan) {
+          continueSession = false;
+          break;
+        }
 
+        let failedRecordingAttempts = 0;
+
+        while (continueSession && !this.isShuttingDown && !shutdownRequested) {
           const file = await this.startCodegenRecording(
-            flowName || `recording-${pageIndex}`,
-            flowUrl || currentUrl,
-            flowInstructions || '請在瀏覽器中操作'
+            recordingPlan.name,
+            recordingPlan.startUrl,
+            recordingPlan.instructions
           );
+
+          if (shutdownRequested || this.isShuttingDown) {
+            continueSession = false;
+            break;
+          }
+
           if (file) {
-            this.metadata.recordings.push({
-              name: flowName || `recording-${pageIndex}`,
-              description: flowInstructions || '',
+            failedRecordingAttempts = 0;
+            const recordingMeta: RecordingMetadata = {
+              name: recordingPlan.name,
+              description: recordingPlan.instructions,
               file,
               recordedAt: getTaipeiISO(),
-            });
+            };
+            this.upsertRecordingMetadata(recordingMeta);
+            this.printRecordingSummary(recordingMeta);
+            lastCapturedPageUrl = recordingPlan.startUrl;
 
-            // 錄製完成後立即詢問使用者接下來要做什麼（改善 UX）
-            console.log('');
-            const post = await waitForInput(
-              '  錄製已完成並已產生錄製檔案。請確認你已關閉 Codegen 的瀏覽器視窗。\n' +
-              '  接下來要做什麼？\n' +
-              '    [Enter] 繼續蒐集下一個頁面\n' +
-              '    [r]     重新錄製此流程\n' +
-              '    [a]     擷取目前頁面 ARIA 快照\n' +
-              '    [q]     結束蒐集\n' +
-              '  你的選擇: '
-            );
+            const postChoice = await promptMenuChoice('錄製完成，下一步要做什麼？', [
+              { key: '1', label: '重新錄製同一個流程', description: '沿用剛才的名稱與起始 URL' },
+              { key: '2', label: '再錄另一個流程', description: '重新輸入另一組錄製資訊' },
+              { key: '3', label: '返回頁面蒐集階段', description: '如要補抓頁面，回去直接蒐集即可' },
+              { key: '4', label: '結束並產生報告', description: '本次蒐集先到這裡' },
+            ]);
 
-            if (post.toLowerCase() === 'q') {
-              continueCollecting = false;
-            } else if (post.toLowerCase() === 'r') {
-              const reFile = await this.startCodegenRecording(
-                flowName || `recording-${pageIndex}`,
-                flowUrl || currentUrl,
-                flowInstructions || '請在瀏覽器中操作'
-              );
-              if (reFile) {
-                this.metadata.recordings.push({
-                  name: flowName || `recording-${pageIndex}`,
-                  description: flowInstructions || '',
-                  file: reFile,
-                  recordedAt: getTaipeiISO(),
-                });
-              }
-            } else if (post.toLowerCase() === 'a') {
-              try {
-                const pageForAria = await this.getActivePage();
-                if (this.config.collectOptions.ariaSnapshot) {
-                  const snapName = `${safeFileName(flowName)}-post-aria`;
-                  await this.captureAriaSnapshot(pageForAria, snapName, `Post-record ARIA: ${flowName}`);
-                } else {
-                  log('⚠️', 'ARIA 擷取功能未啟用於這次執行設定');
-                }
-              } catch (err) {
-                logError('Post-record ARIA 失敗', err);
-              }
+            if (!postChoice || postChoice === '4') {
+              continueSession = false;
+              break;
             }
+
+            if (postChoice === '1') {
+              continue;
+            }
+
+            if (postChoice === '2') {
+              const nextPlan = await this.promptRecordingPlan(
+                this.buildSuggestedRecordingName(lastCapturedPageName),
+                await this.getSuggestedRecordingStartUrl(lastCapturedPageUrl)
+              );
+              if (!nextPlan) {
+                continueSession = false;
+                break;
+              }
+              recordingPlan = nextPlan;
+              failedRecordingAttempts = 0;
+              continue;
+            }
+
+            stage = 'capture';
+            announcedStage = null;
+            break;
           }
+
+          failedRecordingAttempts++;
+          if (failedRecordingAttempts >= 3) {
+            printInteractiveLines([
+              '',
+              `  ⚠️  錄製已連續 ${failedRecordingAttempts} 次沒有產生檔案。`,
+              '  建議先檢查新開的錄製視窗是否能正常啟動，或先返回頁面蒐集階段繼續工作。',
+            ]);
+          }
+
+          const retryChoice = await promptMenuChoice('這次沒有產生錄製檔，下一步要做什麼？', [
+            { key: '1', label: '重新嘗試同一個流程', description: '沿用剛才的設定再錄一次' },
+            { key: '2', label: '改成另一個錄製', description: '重新輸入名稱或起始 URL' },
+            { key: '3', label: '返回頁面蒐集階段', description: '先回去蒐集 ARIA 快照' },
+            { key: '4', label: '結束並產生報告', description: '本次蒐集先到這裡' },
+          ]);
+
+          if (!retryChoice || retryChoice === '4') {
+            continueSession = false;
+            break;
+          }
+
+          if (retryChoice === '1') {
+            continue;
+          }
+
+          if (retryChoice === '2') {
+            const nextPlan = await this.promptRecordingPlan(
+              this.buildSuggestedRecordingName(lastCapturedPageName),
+              await this.getSuggestedRecordingStartUrl(lastCapturedPageUrl)
+            );
+            if (!nextPlan) {
+              continueSession = false;
+              break;
+            }
+            recordingPlan = nextPlan;
+            failedRecordingAttempts = 0;
+            continue;
+          }
+
+          stage = 'capture';
+          announcedStage = null;
+          break;
         }
       }
     } finally {
@@ -1603,15 +2019,17 @@ class MaterialCollector {
 let activeCollector: MaterialCollector | null = null;
 
 process.on('SIGINT', () => {
+  shutdownRequested = true;
   if (activeCollector) {
-    log('⚠️', '收到中斷信號 (Ctrl+C)，正在優雅關閉…將儲存 metadata 並斷開連線', 'WARN');
+    log('⚠️', '收到中斷信號 (Ctrl+C)；這是緊急中止流程。正在優雅關閉並儲存 metadata…', 'WARN');
     activeCollector.requestShutdown();
   } else {
-    log('⚠️', '收到中斷信號 (Ctrl+C)，正在安全退出...', 'WARN');
+    log('⚠️', '收到中斷信號 (Ctrl+C)；正在安全退出...', 'WARN');
     process.exit(0);
   }
 });
 process.on('SIGTERM', () => {
+  shutdownRequested = true;
   if (activeCollector) {
     log('⚠️', '收到終止信號，正在優雅關閉…將儲存 metadata 並斷開連線', 'WARN');
     activeCollector.requestShutdown();
@@ -1622,6 +2040,7 @@ process.on('SIGTERM', () => {
 });
 
 async function main(): Promise<void> {
+  shutdownRequested = false;
   const args = process.argv.slice(2);
   const runId = getTaipeiTimestampForFile();
   initLogger(runId);
