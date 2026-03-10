@@ -66,16 +66,21 @@ npm run start:chrome
 npm run collect
 ```
 
+> 每次執行 `npm run collect`，請以新的**任務子資料夾**區分本次蒐集成果。  
+> 命名格式：`YYYYMMDDhhmmss_錄製名稱`，時間戳一律使用 **Asia/Taipei**。  
+> 例如：`materials\20260310143000_登入流程\`
+
 ## 🌐 使用場景
 
 ```
-內部網路（無 AI）                         外部環境（有 AI）
-┌──────────────────────┐              ┌──────────────────────┐
-│ 1. .\launch-chrome.ps1│              │ 5. 把素材丟給 AI       │
-│ 2. 登入內部網站        │  ──帶出──▶  │ 6. AI 生成自動化腳本    │
-│ 3. npm run collect    │              │ 7. 帶回內網測試        │
-│ 4. 帶走 materials/    │  ◀──帶入──  │                       │
-└──────────────────────┘              └──────────────────────┘
+內部網路（無 AI）                               外部環境（有 AI）
+┌────────────────────────┐                   ┌──────────────────────┐
+│ 1. .\launch-chrome.ps1 │                   │ 5. 把素材丟給 AI       │
+│ 2. 登入內部網站         │  ──帶出任務素材▶ │ 6. AI 生成自動化腳本    │
+│ 3. npm run collect     │                   │ 7. 帶回內網測試        │
+│ 4. 帶走 materials\     │  ◀────帶入─────  │                       │
+│    <任務子資料夾>\     │                   │                       │
+└────────────────────────┘                   └──────────────────────┘
 ```
 
 ## ✨ 功能特色
@@ -111,12 +116,13 @@ automation/
 │   ├── spec.md                   # 功能規格（SDD）
 │   └── 使用指南.md                # 完整使用教學
 ├── logs/                         # 執行日誌（自動產生）
-├── materials/                    # 蒐集的素材（自動產生）
-│   ├── aria-snapshots/           # ARIA 快照
-│   ├── screenshots/              # 截圖
-│   ├── recordings/               # Codegen 錄製
-│   ├── metadata.json             # 蒐集記錄
-│   └── summary-report.md         # 摘要報告
+├── materials/                    # 蒐集根目錄（自動產生）
+│   └── <YYYYMMDDhhmmss_錄製名稱>/ # 單次蒐集任務子資料夾
+│       ├── aria-snapshots/       # ARIA 快照
+│       ├── screenshots/          # 截圖
+│       ├── recordings/           # Codegen 錄製
+│       ├── metadata.json         # 蒐集記錄
+│       └── summary-report.md     # 摘要報告
 ├── collect-materials.ts          # 核心蒐集引擎
 ├── collect-materials-config.json # 自動模式設定檔
 ├── launch-chrome.ps1             # Chrome Debug 啟動腳本
@@ -135,6 +141,19 @@ automation/
 | `npm run collect:auto` | 自動模式（依設定檔）|
 | `npm run collect:snapshot` | 快照模式（擷取當前頁面）|
 | `npm run collect:record` | 錄製模式（啟動 Codegen）|
+
+### 蒐集輸出位置
+
+- `materials/` 是蒐集素材的**根目錄**
+- 每次執行 `npm run collect`，都應使用新的**任務子資料夾**
+- 任務子資料夾命名格式為 `YYYYMMDDhhmmss_錄製名稱`
+- 時間戳一律使用 **Asia/Taipei**
+- 當次任務輸出位於 `materials\<任務子資料夾>\` 下，常見內容包含：
+  - `aria-snapshots/`
+  - `screenshots/`
+  - `recordings/`
+  - `metadata.json`
+  - `summary-report.md`
 
 ### 詳細使用教學
 
@@ -186,7 +205,7 @@ $env:RECORDING_PASSWORD = "your-password"
 git config core.hooksPath .githooks
 ```
 
-Hook 會在 commit 前掃描 `materials/recordings/*.ts`，若偵測到疑似密碼（`.fill(selector, 'password')`）、token 或 secret，將阻止 commit 並提示修正。
+Hook 會在 commit 前掃描任務子資料夾中的錄製檔（例如 `materials\YYYYMMDDhhmmss_錄製名稱\recordings\*.ts`），若偵測到疑似密碼（`.fill(selector, 'password')`）、token 或 secret，將阻止 commit 並提示修正。
 
 > 💡 **建議**：先執行 `git config core.hooksPath .githooks` 啟用防護，再開始使用工具。
 
