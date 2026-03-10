@@ -34,6 +34,7 @@ interface CollectConfig {
   description: string;
   cdpPort: number;
   outputDir: string;
+  taskName?: string;
   collectOptions: {
     ariaSnapshot: boolean;
     screenshot: boolean;
@@ -78,6 +79,9 @@ interface MaterialMetadata {
   nodeVersion: string;
   playwrightVersion: string;
   logFile: string;
+  outputRootDir: string;
+  taskFolder: string;
+  taskOutputDir: string;
   totalPages: number;
   collectedPages: PageMetadata[];
   recordings: RecordingMetadata[];
@@ -159,30 +163,40 @@ function getTaipeiTime(): string {
   return new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
 }
 
-function getTaipeiISO(): string {
+function getTaipeiDateParts(): {
+  year: string;
+  month: string;
+  day: string;
+  hours: string;
+  minutes: string;
+  seconds: string;
+} {
   const now = new Date();
   const taipeiStr = now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
   const taipeiTime = new Date(taipeiStr);
-  const year = taipeiTime.getFullYear();
-  const month = String(taipeiTime.getMonth() + 1).padStart(2, '0');
-  const day = String(taipeiTime.getDate()).padStart(2, '0');
-  const hours = String(taipeiTime.getHours()).padStart(2, '0');
-  const minutes = String(taipeiTime.getMinutes()).padStart(2, '0');
-  const seconds = String(taipeiTime.getSeconds()).padStart(2, '0');
+  return {
+    year: String(taipeiTime.getFullYear()),
+    month: String(taipeiTime.getMonth() + 1).padStart(2, '0'),
+    day: String(taipeiTime.getDate()).padStart(2, '0'),
+    hours: String(taipeiTime.getHours()).padStart(2, '0'),
+    minutes: String(taipeiTime.getMinutes()).padStart(2, '0'),
+    seconds: String(taipeiTime.getSeconds()).padStart(2, '0'),
+  };
+}
+
+function getTaipeiISO(): string {
+  const { year, month, day, hours, minutes, seconds } = getTaipeiDateParts();
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+08:00`;
 }
 
 function getTaipeiTimestampForFile(): string {
-  const now = new Date();
-  const taipeiStr = now.toLocaleString('en-US', { timeZone: 'Asia/Taipei' });
-  const taipeiTime = new Date(taipeiStr);
-  const year = taipeiTime.getFullYear();
-  const month = String(taipeiTime.getMonth() + 1).padStart(2, '0');
-  const day = String(taipeiTime.getDate()).padStart(2, '0');
-  const hours = String(taipeiTime.getHours()).padStart(2, '0');
-  const minutes = String(taipeiTime.getMinutes()).padStart(2, '0');
-  const seconds = String(taipeiTime.getSeconds()).padStart(2, '0');
+  const { year, month, day, hours, minutes, seconds } = getTaipeiDateParts();
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
+function getTaipeiTaskTimestamp(): string {
+  const { year, month, day, hours, minutes, seconds } = getTaipeiDateParts();
+  return `${year}${month}${day}${hours}${minutes}${seconds}`;
 }
 
 // ============================================================
@@ -259,6 +273,14 @@ function buildWindowsCommand(command: string, args: string[]): string {
   return [command, ...args.map(quoteCmdArg)].join(' ');
 }
 
+function getArgValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) return undefined;
+  return value;
+}
+
 function log(emoji: string, message: string, level: 'INFO' | 'WARN' | 'ERROR' = 'INFO'): void {
   const time = getTaipeiTime();
   console.log(`[${time}] ${emoji} ${message}`);
@@ -315,6 +337,25 @@ function safeFileName(name: string): string {
     return `unnamed-${Date.now()}`;
   }
   return trimmed;
+}
+
+function getNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function resolveTaskName(config: CollectConfig): string {
+  return getNonEmptyString(config.taskName)
+    || getNonEmptyString(config.interactiveFlows[0]?.name)
+    || getNonEmptyString(config.projectName)
+    || 'collection';
+}
+
+function buildTaskFolderName(taskName: string): string {
+  return `${getTaipeiTaskTimestamp()}_${safeFileName(taskName)}`;
 }
 
 /** 驗證 URL 安全性 */
@@ -448,6 +489,10 @@ function loadConfig(configPath: string): CollectConfig {
     logError('設定檔缺少必要欄位: projectName');
     process.exit(1);
   }
+  if (config.taskName !== undefined && typeof config.taskName !== 'string') {
+    logError('設定檔欄位 taskName 必須是字串');
+    process.exit(1);
+  }
 
   const defaults = {
     ariaSnapshot: true,
@@ -494,7 +539,9 @@ function getPlaywrightVersion(): string {
 
 class MaterialCollector {
   private browser: Browser | null = null;
+  private outputRootDir: string;
   private outputDir: string;
+  private taskFolderName: string;
   private metadata: MaterialMetadata;
   private config: CollectConfig;
   private isShuttingDown = false;
@@ -506,7 +553,9 @@ class MaterialCollector {
 
   constructor(config: CollectConfig) {
     this.config = config;
-    this.outputDir = path.resolve(config.outputDir);
+    this.outputRootDir = path.resolve(config.outputDir);
+    this.taskFolderName = buildTaskFolderName(resolveTaskName(config));
+    this.outputDir = path.join(this.outputRootDir, this.taskFolderName);
     this.metadata = {
       projectName: config.projectName,
       collectedAt: getTaipeiISO(),
@@ -516,6 +565,9 @@ class MaterialCollector {
       nodeVersion: process.version,
       playwrightVersion: getPlaywrightVersion(),
       logFile: getLogFilePath() || '',
+      outputRootDir: this.outputRootDir,
+      taskFolder: this.taskFolderName,
+      taskOutputDir: this.outputDir,
       totalPages: config.pages.length,
       collectedPages: [],
       recordings: [],
@@ -533,6 +585,7 @@ class MaterialCollector {
 
   /** 初始化輸出目錄 */
   private initOutputDirs(): void {
+    ensureDirSync(this.outputRootDir);
     ensureDirSync(this.outputDir);
     ensureDirSync(path.join(this.outputDir, 'aria-snapshots'));
     ensureDirSync(path.join(this.outputDir, 'screenshots'));
@@ -540,7 +593,8 @@ class MaterialCollector {
       ensureDirSync(path.join(this.outputDir, 'html-sources'));
     }
     ensureDirSync(path.join(this.outputDir, 'recordings'));
-    log('📁', `輸出目錄已建立: ${this.outputDir}`);
+    log('📁', `素材根目錄: ${this.outputRootDir}`);
+    log('🗂️', `本次任務目錄已建立: ${this.outputDir}`);
   }
 
   private upsertRecordingMetadata(recording: RecordingMetadata): void {
@@ -563,6 +617,8 @@ class MaterialCollector {
       '  建議順序：先完成頁面蒐集，再進入錄製階段（ARIA-first）。',
       '  正常流程不需要按 Ctrl+C；Ctrl+C 只用於緊急中止。',
       `  單次互動模式最多可蒐集 ${maxPages} 頁。`,
+      `  素材根目錄：${this.outputRootDir}`,
+      `  本次任務子資料夾：${this.taskFolderName}`,
       `  本次輸出目錄：${this.outputDir}`,
       '',
     ]);
@@ -609,7 +665,7 @@ class MaterialCollector {
       `    - 已蒐集頁面：${this.metadata.collectedPages.length}`,
       `    - 已錄製流程：${this.metadata.recordings.length}`,
       `    - 錯誤：${this.metadata.errors.length}`,
-      `    - 輸出目錄：${this.outputDir}`,
+      `    - 本次任務目錄：${this.outputDir}`,
     ];
 
     printInteractiveLines(lines);
@@ -1911,12 +1967,17 @@ class MaterialCollector {
   }
 
   private generateSummaryReport(): void {
+    const rootDisplayName = path.basename(this.outputRootDir) || this.outputRootDir;
+    const taskRelativePath = path.join(rootDisplayName, this.taskFolderName);
     const report: string[] = [
       `# 📦 素材蒐集摘要報告`,
       ``,
       `> 專案: ${this.metadata.projectName}`,
       `> 蒐集時間: ${getTaipeiTime()}`,
       `> 工具版本: ${TOOL_VERSION}`,
+      `> 素材根目錄: ${this.metadata.outputRootDir}`,
+      `> 任務子資料夾: ${this.metadata.taskFolder}`,
+      `> 任務輸出目錄: ${this.metadata.taskOutputDir}`,
       ``,
       `## 蒐集結果`,
       ``,
@@ -1966,15 +2027,16 @@ class MaterialCollector {
     report.push('## 📁 檔案結構');
     report.push('');
     report.push('```');
-    report.push(`${path.basename(this.outputDir)}/`);
-    report.push('├── aria-snapshots/     # ARIA 快照（最重要 - AI 分析的核心素材）');
-    report.push('├── screenshots/        # 截圖（視覺參考）');
+    report.push(`${rootDisplayName}/`);
+    report.push(`└── ${this.taskFolderName}/`);
+    report.push('    ├── aria-snapshots/     # ARIA 快照（最重要 - AI 分析的核心素材）');
+    report.push('    ├── screenshots/        # 截圖（視覺參考）');
     if (this.config.collectOptions.htmlSource) {
-      report.push('├── html-sources/       # HTML 原始碼（可選）');
+      report.push('    ├── html-sources/       # HTML 原始碼（可選）');
     }
-    report.push('├── recordings/         # Codegen 錄製（互動流程）');
-    report.push('├── metadata.json       # 蒐集記錄');
-    report.push('└── summary-report.md   # 本摘要報告');
+    report.push('    ├── recordings/         # Codegen 錄製（互動流程）');
+    report.push('    ├── metadata.json       # 蒐集記錄');
+    report.push('    └── summary-report.md   # 本摘要報告');
     report.push('```');
 
     report.push('');
@@ -1988,7 +2050,7 @@ class MaterialCollector {
     report.push('');
     report.push('## 🚀 下一步');
     report.push('');
-    report.push('1. 將 `aria-snapshots/` 和 `recordings/` 目錄帶到有網路的環境');
+    report.push(`1. 將本次任務子資料夾（\`${taskRelativePath}\`）中的 \`aria-snapshots/\` 和 \`recordings/\` 目錄帶到有網路的環境`);
     report.push('2. 將素材貼給雲端 AI（如 ChatGPT、Claude），搭配「使用指南.md」中的提示詞');
     report.push('3. AI 會根據素材生成 TypeScript 自動化腳本');
     report.push('4. 將生成的腳本帶回內網測試');
@@ -1998,14 +2060,15 @@ class MaterialCollector {
     log('📊', `摘要報告已儲存: ${reportPath}`);
 
     logSection('🎉 蒐集完成！');
-    console.log(`   📁 素材目錄: ${this.outputDir}`);
+    console.log(`   📁 素材根目錄: ${this.outputRootDir}`);
+    console.log(`   🗂️ 本次任務目錄: ${this.outputDir}`);
     console.log(`   📄 蒐集頁面: ${this.metadata.collectedPages.length} 個`);
     console.log(`   🎬 錄製檔案: ${this.metadata.recordings.length} 個`);
     if (this.metadata.errors.length > 0) {
       console.log(`   ⚠️  錯誤數量: ${this.metadata.errors.length} 個`);
     }
     console.log('');
-    console.log('   下一步: 帶著 materials/ 資料夾到有網路的環境，');
+    console.log(`   下一步: 帶著 ${taskRelativePath}（或整個 ${rootDisplayName} 資料夾）到有網路的環境，`);
     console.log('   參考「使用指南.md」的提示詞讓 AI 生成程式碼！');
     console.log('');
   }
@@ -2062,13 +2125,12 @@ async function main(): Promise<void> {
   console.log('');
   log('🧾', `日誌檔案: ${getLogFilePath() || 'logs/collect-materials-*.log'}`);
 
-  const configPath = args.includes('--config')
-    ? args[args.indexOf('--config') + 1]
-    : DEFAULT_CONFIG_PATH;
+  const configPath = getArgValue(args, '--config') || DEFAULT_CONFIG_PATH;
   writeLogContext('configPath', configPath);
 
-  const cdpPortArg = args.includes('--port')
-    ? parseInt(args[args.indexOf('--port') + 1], 10)
+  const cdpPortValue = getArgValue(args, '--port');
+  const cdpPortArg = cdpPortValue
+    ? parseInt(cdpPortValue, 10)
     : undefined;
 
   if (args.includes('--auto')) {
@@ -2086,6 +2148,7 @@ async function main(): Promise<void> {
       description: '快速快照',
       cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
       outputDir: DEFAULT_OUTPUT_DIR,
+      taskName: 'quick-snapshot',
       collectOptions: {
         ariaSnapshot: true,
         screenshot: true,
@@ -2103,16 +2166,15 @@ async function main(): Promise<void> {
     await collector.collectSnapshot();
 
   } else if (args.includes('--record')) {
-    const recordName = args[args.indexOf('--record') + 1] || 'recording';
-    const startUrl = args.includes('--url')
-      ? args[args.indexOf('--url') + 1]
-      : 'about:blank';
+    const recordName = getArgValue(args, '--record') || 'recording';
+    const startUrl = getArgValue(args, '--url') || 'about:blank';
 
     const config: CollectConfig = {
       projectName: 'codegen-recording',
       description: `錄製: ${recordName}`,
       cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
       outputDir: DEFAULT_OUTPUT_DIR,
+      taskName: recordName,
       collectOptions: {
         ariaSnapshot: false,
         screenshot: false,
@@ -2146,11 +2208,15 @@ async function main(): Promise<void> {
 
     switch (choice) {
       case '1': {
+        const projectName = await waitForInput('  專案名稱: ') || 'my-project';
+        const outputRootDir = await waitForInput(`  素材根目錄 (Enter=${DEFAULT_OUTPUT_DIR}): `) || DEFAULT_OUTPUT_DIR;
+        const taskName = await waitForInput(`  本次任務/錄製名稱（Enter 使用「${projectName}」）: `) || projectName;
         const config: CollectConfig = {
-          projectName: await waitForInput('  專案名稱: ') || 'my-project',
+          projectName,
           description: '互動模式蒐集',
           cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
-          outputDir: await waitForInput(`  輸出目錄 (Enter=${DEFAULT_OUTPUT_DIR}): `) || DEFAULT_OUTPUT_DIR,
+          outputDir: outputRootDir,
+          taskName,
           collectOptions: {
             ariaSnapshot: true,
             screenshot: true,
@@ -2184,6 +2250,7 @@ async function main(): Promise<void> {
           description: '快速快照',
           cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
           outputDir: DEFAULT_OUTPUT_DIR,
+          taskName: 'quick-snapshot',
           collectOptions: {
             ariaSnapshot: true,
             screenshot: true,
@@ -2209,6 +2276,7 @@ async function main(): Promise<void> {
           description: `錄製: ${recordName}`,
           cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
           outputDir: DEFAULT_OUTPUT_DIR,
+          taskName: recordName,
           collectOptions: {
             ariaSnapshot: false,
             screenshot: false,
