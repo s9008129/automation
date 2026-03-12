@@ -9,3 +9,4 @@ logs/
 *.d.ts
 *.js.map
 output/
+.DS_Store

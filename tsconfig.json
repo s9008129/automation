@@ -19,5 +19,5 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["*.ts", "src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "materials", "sanitizeRecording-FIXED.ts"]
+  "exclude": ["node_modules", "dist", "materials"]
 }
