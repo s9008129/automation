@@ -1,6 +1,10 @@
-// ⚠️ 此錄製檔已被敏感資訊清理，密碼欄位已替換為 process.env.RECORDING_PASSWORD
+// ⚠️ 此錄製檔已被敏感資訊清理：密碼不會寫死在檔案裡，改從環境變數讀取
 const { chromium } = require('playwright');
 
+// 這段是一次性的自動操作流程：
+// 1) 開瀏覽器登入 NCERT
+// 2) 點進月報頁面並下載檔案
+// 3) 最後登出與關閉瀏覽器
 (async () => {
   const browser = await chromium.launch({
     headless: false
@@ -20,7 +24,7 @@ const { chromium } = require('playwright');
   const download = await downloadPromise;
   await page.getByRole('link', { name: '登出' }).click();
 
-  // ---------------------
+  // 流程做完後，確實關閉資源，避免背景程序殘留
   await context.close();
   await browser.close();
 })();

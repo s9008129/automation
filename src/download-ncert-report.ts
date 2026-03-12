@@ -308,8 +308,8 @@ function isPreferredMonthlyReportFile(fileName: string): boolean {
 // 就像一位助理幫你自動完成瀏覽器上的所有操作步驟
 
 async function main(): Promise<void> {
-  // 【第 1 步】載入設定檔（.env）
-  // 就像開工前先看備忘錄，確認帳號密碼等設定值已就位
+  // 整體流程：載入設定 → 連上既有 Chrome → 登入 → 找 PDF / Excel 並下載 → 登出
+  // 【第 1 步】載入設定檔（.env），就像開工前先看備忘錄，確認帳號密碼等設定值已就位
   loadDotEnv();
 
   // 【第 2 步】驗證帳號密碼是否已設定
@@ -422,9 +422,8 @@ async function main(): Promise<void> {
     await page.waitForLoadState('networkidle');
     log('✅', '登入成功');
 
-    // 【第 8 步】找到並點開「資安聯防監控月報」頁面
-    // 有些網站的選單要滑鼠移上去（hover）才會展開子選單，
-    // 所以這裡會嘗試多種方式：直接點→滑鼠移入展開→直接輸入網址，確保一定能進去
+    // 【第 8 步】點擊或導航到「資安聯防監控月報」頁面
+    // 先走最直覺路徑；若選單需要滑鼠移入（hover）才會展開子選單，這裡也會嘗試模擬，必要時再直接輸入網址
     log('📋', '尋找資安聯防監控月報連結或直接導航...');
     const reportLinkLocator = page.getByRole('link', { name: /資安聯防監控月報/i });
     try {
@@ -784,8 +783,8 @@ async function main(): Promise<void> {
     const pdfText = (await targetLink.textContent())?.trim() ?? selectedCandidate?.fileName ?? '(unknown)';
     log('📄', '找到目標連結: ' + pdfText);
 
-    // 點擊連結觸發下載，同時「豎起耳朵」等瀏覽器說「開始下載了」
-    // waitForEvent('download') 就像在等快遞通知——按下連結後等瀏覽器回報下載事件
+    // 觸發下載：先建立 waitForEvent('download') 再點擊，避免下載事件太快而漏接
+    // 就像先打開收件通知，再按下下載連結，確保瀏覽器一開始下載就能被接住
     const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
     await targetLink.click();
     const download: Download = await downloadPromise;
@@ -803,8 +802,7 @@ async function main(): Promise<void> {
     const safeBase = safeFileName(ensuredPdf);
     const safeFilename = safeBase.toLowerCase().endsWith('.pdf') ? safeBase : (safeBase + '.pdf');
 
-    // 儲存到專案的 output 目錄
-    // resolveNonConflictingPath = 如果檔名已存在，就自動加上編號（如 report(1).pdf）避免覆蓋舊檔
+    // 儲存到專案 output 目錄；檔名會先淨化，再透過 resolveNonConflictingPath 自動避開同名覆寫
     const intendedSavePath = path.join(OUTPUT_DIR, safeFilename);
     const savePath = resolveNonConflictingPath(intendedSavePath);
     if (path.resolve(savePath) !== path.resolve(intendedSavePath)) {
@@ -1206,8 +1204,7 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   } finally {
-    // 清理：只是把「遙控器」放下，不會關掉使用者的 Chrome
-    // 這樣你的 Chrome 和所有已登入的網站都不受影響
+    // 清理：只釋放程式內的 CDP 連線參考，把「遙控器」放下，不主動關閉使用者本來開著的 Chrome
     browser = null;
     log('🧹', '已釋放 CDP 連線參考（Chrome 保持運行）');
   }

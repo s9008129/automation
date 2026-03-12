@@ -1,13 +1,13 @@
 /**
- * Comprehensive test script to validate sanitizeRecording function
- * Tests that literal credentials are replaced with environment variables
- * and that comments are preserved unchanged.
+ * 這份測試腳本會檢查 sanitizeRecording 的核心承諾：
+ * 1) 帳密字串要被替換成環境變數
+ * 2) 註解內容不能被誤改
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// Test cases with expected transformations
+// 測試案例：每筆都包含「原始輸入」與「預期輸出」
 const testCases = [
   {
     name: 'Single param fill with password',
@@ -65,7 +65,7 @@ const testCases = [
   },
 ];
 
-// Sanitization function (simplified version matching collect-materials.ts logic)
+// 清理函式（簡化版）：邏輯與 collect-materials.ts 保持一致，用來做行為驗證
 function sanitizeRecording(content) {
   const lines = content.split(/\r?\n/);
   let inBlock = false;
@@ -74,7 +74,7 @@ function sanitizeRecording(content) {
   for (let rawLine of lines) {
     let line = rawLine;
 
-    // Handle block comment range
+    // 在區塊註解範圍內完全不替換，避免改壞說明內容
     if (inBlock) {
       outLines.push(line);
       if (line.includes('*/')) inBlock = false;
@@ -86,25 +86,25 @@ function sanitizeRecording(content) {
       continue;
     }
 
-    // Skip single-line comments
+    // 單行註解也直接略過
     if (line.trim().startsWith('//')) {
       outLines.push(line);
       continue;
     }
 
-    // Apply replacements in order (from specific to general)
-    // 1) Two-param form: .fill(selector, 'secret') or .type(selector, 'secret')
+    // 依序替換（從精準規則到保守 fallback）
+    // 1) 兩參數形式：.fill(selector, 'secret') / .type(selector, 'secret')
     line = line.replace(/\.fill\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g, `.fill($1, process.env.RECORDING_PASSWORD)`);
     line = line.replace(/\.type\(\s*([^,]+?)\s*,\s*(['"])((?:\\.|[^\\])*)\2\s*\)/g, `.type($1, process.env.RECORDING_PASSWORD)`);
 
-    // 2) Chained getByRole single-param form, match by name for password/username
+    // 2) getByRole 鏈式單參數形式，依欄位名稱判斷是帳號還是密碼
     line = line.replace(/(\.getByRole\([^)]*name\s*:\s*['"](?:密碼|password|pwd)['"][^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.RECORDING_PASSWORD)`);
     line = line.replace(/(\.getByRole\([^)]*name\s*:\s*['"](?:帳號|account|user|username)['"][^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.NCERT_USERNAME)`);
 
-    // 3) locator('#password') type selector
+    // 3) locator('#password') 這類 selector 風格
     line = line.replace(/(\.locator\([^)]*(?:password|pwd)[^)]*\)\s*\.\s*(?:fill|type))\(\s*(['"])(?:\\.|[^\\])*?\2\s*\)/giu, `$1(process.env.RECORDING_PASSWORD)`);
 
-    // 4) Fallback: single-param .fill('...') /.type('...')
+    // 4) 最後 fallback：單參數 fill/type
     line = line.replace(/\.(?:fill|type)\(\s*(['"])(?:\\.|[^\\])*?\1\s*\)/gu, `.fill(process.env.RECORDING_PASSWORD)`);
 
     outLines.push(line);
@@ -113,7 +113,7 @@ function sanitizeRecording(content) {
   return outLines.join('\n');
 }
 
-// Run tests
+// 執行測試並逐筆列出結果，讓失敗案例一眼可見
 console.log('🧪 Testing sanitizeRecording function...\n');
 
 let passed = 0;
@@ -139,7 +139,7 @@ console.log(`\n${'='.repeat(60)}`);
 console.log(`📊 Results: ${passed} passed, ${failed} failed out of ${testCases.length} tests`);
 console.log('='.repeat(60));
 
-// Test with a complete example file
+// 再用「完整錄製檔範例」做整體驗證，模擬真實使用情境
 console.log('\n🔍 Testing complete file transformation...\n');
 
 const sampleRecording = `const { chromium } = require('playwright');
@@ -176,7 +176,7 @@ console.log('\nSanitized recording:');
 console.log('-'.repeat(60));
 console.log(sanitized);
 
-// Verify key transformations
+// 最後確認幾個關鍵條件都成立（環境變數存在、明碼不存在、註解保留）
 const hasUsername = sanitized.includes('process.env.NCERT_USERNAME');
 const hasPassword = sanitized.includes('process.env.RECORDING_PASSWORD');
 const noLiteralUsername = !sanitized.includes("fill('user@example.com')");

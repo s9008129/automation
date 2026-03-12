@@ -1,6 +1,7 @@
 #!/bin/bash
-# Comprehensive credential leak verification script
-# This script searches for any remaining literal credentials in the repository
+# 憑證外洩驗證腳本
+# 目的：掃描錄製檔與近期提交，確認沒有殘留明文帳密或敏感字串。
+# 輸出：每個測試都會顯示 PASS/FAIL，最後依 FAIL_COUNT 回傳 exit code。
 
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║   CREDENTIAL LEAK DETECTION & SANITIZATION VERIFICATION        ║"
@@ -9,7 +10,7 @@ echo ""
 
 FAIL_COUNT=0
 
-# Test 1: Search for literal credential patterns in recordings
+# 測試 1：掃描錄製檔中是否出現可疑憑證關鍵字（排除 process.env 用法）
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 1: Searching for literal credential patterns in recordings"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -34,7 +35,7 @@ done
 
 echo ""
 
-# Test 2: Search for .fill('literal') patterns
+# 測試 2：檢查是否有 .fill('明文字串') 類型的硬編碼輸入
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 2: Searching for .fill() with literal string values"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -51,7 +52,7 @@ fi
 
 echo ""
 
-# Test 3: Verify environment variable usage
+# 測試 3：確認錄製檔有使用 process.env 讀取必要變數
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 3: Verifying environment variable usage in recordings"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -69,7 +70,7 @@ done
 
 echo ""
 
-# Test 4: Verify sanitization header
+# 測試 4：確認每份錄製檔都包含「已清理」標頭
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 4: Verifying sanitization header in recordings"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -89,7 +90,7 @@ done
 
 echo ""
 
-# Test 5: Run unit tests for sanitizeRecording function
+# 測試 5：執行 sanitizeRecording 相關驗證腳本
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 5: Running sanitizeRecording unit tests"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -106,7 +107,7 @@ fi
 
 echo ""
 
-# Test 6: Verify no secrets in git history (recent commits)
+# 測試 6：檢查最近 5 次提交差異是否出現可疑明文 .fill() 新增
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "TEST 6: Checking recent git history for credential leaks"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -122,7 +123,7 @@ fi
 
 echo ""
 
-# Final Summary
+# 最終總結：全部通過則回傳 0；否則回傳 1 供 CI / pre-commit 判斷
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║                        FINAL VERDICT                           ║"
 echo "╚════════════════════════════════════════════════════════════════╝"

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
+# 啟動（或重用）Chrome Debug 模式：
+# - 預設 Port 9222
+# - 使用專案專屬 profile，避免污染日常瀏覽器設定
 set -euo pipefail
 
+# 參數解析：支援 --port 9222 或直接給數字（例如 9223）。
 PORT="9222"
 if [[ "${1:-}" == "--port" && -n "${2:-}" ]]; then
   PORT="$2"
@@ -8,14 +12,17 @@ elif [[ "${1:-}" =~ ^[0-9]+$ ]]; then
   PORT="$1"
 fi
 
+# 取得專案路徑、profile 路徑與日誌位置。
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOG_DIR="$ROOT_DIR/logs"
 PROFILE_DIR="$ROOT_DIR/chrome-debug-profile"
 
+# 建立 log 檔，所有狀態都會寫入便於後續排查。
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/launch-chrome-$(TZ=Asia/Taipei date +"%Y%m%d-%H%M%S").log"
 
+# 統一 log 格式：時間 + 等級 + 訊息（同時輸出到終端與檔案）。
 log() {
   local level="$1"; shift
   local msg="$*"
@@ -30,6 +37,9 @@ log "INFO" "Port: $PORT"
 log "INFO" "ProfileDir: $PROFILE_DIR"
 log "INFO" "LogFile: $LOG_FILE"
 
+# 先檢查 Port 是否已被占用：
+# - 若是同一個 profile 的 Chrome，直接視為可重用並成功結束
+# - 若是其他程式占用，回報錯誤避免衝突
 if command -v lsof >/dev/null 2>&1; then
   if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     PID="$(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t | head -n 1 || true)"
@@ -45,6 +55,7 @@ if command -v lsof >/dev/null 2>&1; then
   fi
 fi
 
+# 尋找可執行的 Chrome/Chromium 路徑（依序嘗試常見安裝位置）。
 CHROME_BIN=""
 for p in \
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
@@ -62,6 +73,7 @@ if [[ -z "$CHROME_BIN" ]]; then
   exit 1
 fi
 
+# 啟動 Chrome Debug：指定 remote debugging port 與專用 user data dir。
 log "INFO" "🚀 啟動 Chrome Debug 模式..."
 "$CHROME_BIN" \
   --remote-debugging-port="$PORT" \
@@ -72,6 +84,7 @@ log "INFO" "🚀 啟動 Chrome Debug 模式..."
 
 sleep 2
 
+# 啟動後嘗試輪詢 CDP 健康檢查端點，最多重試 5 次。
 if command -v curl >/dev/null 2>&1; then
   for _ in 1 2 3 4 5; do
     if curl -s "http://localhost:${PORT}/json/version" >/dev/null 2>&1; then
