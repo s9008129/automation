@@ -1,217 +1,229 @@
-# 🏗️ 內部網路網頁素材離線蒐集工具
+# 內部網路網頁素材離線蒐集工具
 
-[![Node.js](https://img.shields.io/badge/Node.js-v20%2B-green)](https://nodejs.org/)
-[![Playwright](https://img.shields.io/badge/Playwright-1.52-blue)](https://playwright.dev/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2011-lightgrey)](https://www.microsoft.com/windows)
-[![License](https://img.shields.io/badge/License-Private-red)]()
+> 這個工具可以把內網網站的畫面、頁面結構與操作過程存下來，方便之後帶到外部環境，請 AI 協助整理成腳本。
+>
+> 如果你現在只想知道怎麼開始：
+>
+> - **準備者（有網路的電腦）**：執行 `.\scripts\prepare-offline-bundle.ps1`
+> - **內網使用者（拿到完整工具包的人）**：依序執行 `.\install.ps1` → `.\launch-chrome.ps1` → `.\collect.ps1`
 
-> 完全離線運作的網頁素材蒐集工具。在無外部網路的內部網路環境中，透過 Chrome Debug 模式蒐集 ARIA 快照、截圖、Codegen 錄製，供外部 AI 分析生成自動化腳本。
+> 本 README 先當入口頁使用；更完整的白話 SOP 請看 [`docs/使用指南.md`](docs/使用指南.md)。
 
-## 📋 目錄
+## 目錄
 
-- [快速開始](#-快速開始)
-- [使用場景](#-使用場景)
-- [功能特色](#-功能特色)
-- [專案結構](#-專案結構)
-- [操作指南](#-操作指南)
-- [常見問題](#-常見問題)
+- [快速開始](#快速開始)
+- [使用場景](#使用場景)
+- [功能特色](#功能特色)
+- [你最常會用到的檔案](#你最常會用到的檔案)
+- [進一步操作](#進一步操作)
+- [常見問題](#常見問題)
+- [安全防護](#安全防護)
+- [技術支援](#技術支援)
 
-## 🚀 快速開始
+## 快速開始
 
-### 前置需求
+### 先分清楚你是哪一種人
 
-- 一般使用者：Windows 11 + PowerShell 7.x + Google Chrome
-- 技術人員 / 打包者：另外需要 Node.js v20+（用來準備完整離線包）
-- macOS / Linux（相容，但本文以 Windows PowerShell 為主）
+#### A. 我是內網直接使用者
+你手上已經有別人準備好的**完整工具包**，你只想直接使用。
 
-### 安裝
+你通常只需要這 3 個檔案：
+
+- `install.ps1`
+- `launch-chrome.ps1`
+- `collect.ps1`
+
+#### B. 我是工具準備者
+你是在**有網路的電腦**上，幫大家把完整工具包先準備好，再交給內網同事。
+
+你最重要的指令是：
+
+- `scripts/prepare-offline-bundle.ps1`
+
+---
+
+### 我是內網直接使用者：最短流程
+
+請在 **Windows 11 + PowerShell 7.x** 中，於完整工具包資料夾內依序執行：
 
 ```powershell
-# 1. 一般使用者請直接執行這支
 .\install.ps1
-```
-
-```bash
-# macOS / Linux（相容流程）
-./scripts/setup.sh
-```
-
-> 這套工具可以做成**完整離線包**，因此一般使用者電腦不需要先有 npm。
-> 如果你是要幫同事準備內網用安裝包的技術人員，請先執行 `.\scripts\prepare-offline-bundle.ps1`。
-
-### 使用
-
-```powershell
-# 2. 啟動 Chrome Debug 模式（獨立 profile，不影響日常使用）
 .\launch-chrome.ps1
-
-# 3. 在 Chrome 中登入你的內部網站
-
-# 4. 開啟另一個 PowerShell 視窗，開始蒐集
 .\collect.ps1
 ```
 
-> macOS / Linux 請改用 `./scripts/launch-chrome.sh` 與對應 shell 流程；本文主線以 Windows PowerShell 為主。
+白話說明如下：
 
-> 每次執行 `.\collect.ps1`，請以新的**任務子資料夾**區分本次蒐集成果。
-> 命名格式：`YYYYMMDDhhmmss_錄製名稱`，時間戳一律使用 **Asia/Taipei**。  
-> 例如：`materials\20260310143000_登入流程\`
+1. `install.ps1`
+   - 先檢查這份工具包是不是完整可用
+   - **它不是上網安裝器**
+2. `launch-chrome.ps1`
+   - 開啟專用 Chrome 視窗
+3. `collect.ps1`
+   - 開始蒐集素材
 
-## 🌐 使用場景
-
-```
-內部網路（無 AI）                               外部環境（有 AI）
-┌────────────────────────┐                   ┌──────────────────────┐
-│ 1. .\launch-chrome.ps1 │                   │ 5. 把素材丟給 AI       │
-│ 2. 登入內部網站         │  ──帶出任務素材▶ │ 6. AI 生成自動化腳本    │
-│ 3. .\collect.ps1       │                   │ 7. 帶回內網測試        │
-│ 4. 帶走 materials\     │  ◀────帶入─────  │                       │
-│    <任務子資料夾>\     │                   │                       │
-└────────────────────────┘                   └──────────────────────┘
-```
-
-## ✨ 功能特色
-
-| 功能 | 說明 |
-|------|------|
-| 📸 ARIA 快照 | 擷取頁面語意結構（AI 分析的核心素材） |
-| 📷 截圖 | 全頁截圖 + 自動降級為視窗截圖 |
-| 🎬 Codegen 錄製 | 錄製使用者互動流程，生成 TypeScript 腳本 |
-| 🔐 錄製檔密碼清理 | 自動偵測並替換錄製檔中的明文密碼為環境變數 |
-| 🧭 分段式互動引導 | 互動模式分成「頁面蒐集 → 流程錄製」，不需要用 Ctrl+C 重跑 |
-| 📄 HTML 原始碼 | 擷取頁面 HTML（可選） |
-| 🔄 iframe 遞迴 | 自動深入多層 iframe 擷取結構 |
-| 📊 摘要報告 | 自動產生 summary-report.md |
-| 🧾 結構化日誌 | 日誌可直接交給 AI 診斷問題 |
-
-## 📁 專案結構
-
-```
-automation/
-├── .github/
-│   └── copilot-instructions.md   # AI 開發準則
-├── .githooks/
-│   └── pre-commit                # 敏感資訊掃描 hook
-├── scripts/
-│   ├── pre-commit-scan.ps1       # 掃描錄製檔敏感模式（PowerShell）
-│   ├── pre-commit-scan.sh        # 掃描錄製檔敏感模式（bash）
-│   ├── launch-chrome.sh          # macOS/Linux Chrome Debug 啟動
-│   ├── prepare-offline-bundle.ps1 # 技術人員準備完整離線包
-│   ├── setup.sh                  # macOS/Linux 安裝腳本
-│   ├── acceptance-macos.sh       # macOS 驗收腳本（含離線 mock）
-│   └── alt-verify-macos.sh       # macOS 替代驗收（無 Playwright 環境）
-├── docs/
-│   ├── spec.md                   # 功能規格（SDD）
-│   └── 使用指南.md                # 完整使用教學
-├── logs/                         # 執行日誌（自動產生）
-├── materials/                    # 蒐集根目錄（自動產生）
-│   └── <YYYYMMDDhhmmss_錄製名稱>/ # 單次蒐集任務子資料夾
-│       ├── aria-snapshots/       # ARIA 快照
-│       ├── screenshots/          # 截圖
-│       ├── recordings/           # Codegen 錄製
-│       ├── metadata.json         # 蒐集記錄
-│       └── summary-report.md     # 摘要報告
-├── collect.ps1                   # Windows 一般使用者蒐集入口
-├── collect-materials.ts          # 核心蒐集引擎
-├── collect-materials-config.json # 自動模式設定檔
-├── install.ps1                   # Windows 一般使用者安裝入口
-├── launch-chrome.ps1             # Chrome Debug 啟動腳本
-├── runtime\                      # 可選：完整離線包內建 Node.js runtime
-├── setup.ps1                     # 一鍵安裝腳本
-├── package.json                  # 專案設定
-└── tsconfig.json                 # TypeScript 設定
-```
-
-## 📖 操作指南
-
-### 蒐集模式
-
-| 命令 | 說明 |
-|------|------|
-| `.\collect.ps1` | 互動模式（推薦新手）|
-| `.\collect.ps1 --auto` | 自動模式（依設定檔）|
-| `.\collect.ps1 --snapshot` | 快照模式（擷取當前頁面）|
-| `.\collect.ps1 --record 登入流程` | 錄製模式（啟動 Codegen）|
-
-> 技術人員原有的 npm scripts 仍保留，但一般使用者建議直接使用 PowerShell 入口。
-
-### 蒐集輸出位置
-
-- `materials/` 是蒐集素材的**根目錄**
-- 每次執行 `.\collect.ps1`，都應使用新的**任務子資料夾**
-- 任務子資料夾命名格式為 `YYYYMMDDhhmmss_錄製名稱`
-- 時間戳一律使用 **Asia/Taipei**
-- 當次任務輸出位於 `materials\<任務子資料夾>\` 下，常見內容包含：
-  - `aria-snapshots/`
-  - `screenshots/`
-  - `recordings/`
-  - `metadata.json`
-  - `summary-report.md`
-
-### 詳細使用教學
-
-請參閱 [📖 使用指南](docs/使用指南.md)
-
-### Prompt 範本與 Debug 指南（精簡導覽）
-
-- LLM 生成 Prompt 範本（詳見 docs/使用指南.md#13）
-- LLM Debug Prompt（詳見 docs/使用指南.md#14）
-
-（如需完整範本，請打開使用指南並複製第 13、14 節的內容進入你的 LLM 對話視窗。）
-
-## ❓ 常見問題
-
-| 問題 | 解決方式 |
-|------|---------|
-| 一般使用者電腦沒有 npm | 直接執行 `.\install.ps1` 與 `.\collect.ps1`，不需要手動輸入 npm 指令 |
-| Chrome Debug 模式未啟動 | 執行 `.\launch-chrome.ps1` |
-| 端口 9222 被佔用 | 關閉所有 Chrome 後重新執行腳本 |
-| 找不到頁面（選到 chrome:// 內部頁面） | 已自動過濾，確保 Chrome 中有開啟目標網站 |
-| Codegen spawn EINVAL | 已修復（Windows 使用 cmd.exe 包裝） |
-| 全頁截圖失敗 | 自動降級為視窗截圖 |
+> 如果 `install.ps1` 失敗，通常表示你拿到的不是完整工具包。請直接找準備者重做，不要自己研究 npm 或套件安裝。
 
 ---
 
-## 🔒 安全防護（Pre-commit Hook）
+### 我是工具準備者：最短流程
 
-<!-- Implemented T-04, T-05 by claude-opus-4.6 on 2026-02-10 -->
-
-錄製檔可能包含密碼等敏感資訊。本專案提供**雙重防護**：
-
-### 1. 錄製檔自動清理（`sanitizeRecording`）
-
-錄製結束後，工具會自動掃描 `.fill()` 呼叫中的密碼欄位，將明文密碼替換為環境變數 `process.env.RECORDING_PASSWORD`。
-
-如需設定替換值，請在執行前設定環境變數：
+請在**有網路的 Windows 電腦**、專案原始資料夾裡執行：
 
 ```powershell
-# PowerShell（當次有效）
-$env:RECORDING_PASSWORD = "your-password"
-
-# 或建立 .env 檔案（已被 .gitignore 排除）
-# RECORDING_PASSWORD=your-password
+.\scripts\prepare-offline-bundle.ps1
 ```
 
-### 2. Pre-commit Hook 掃描
+這一步會先把要帶進內網的關鍵內容準備好，例如：
+
+- `runtime\node\`：工具自己的執行引擎
+- `node_modules\`：工具需要的零件資料夾
+- `.playwright-browsers\`：工具需要的瀏覽器元件
+- `install.ps1`、`launch-chrome.ps1`、`collect.ps1`：給一般使用者直接執行的入口檔
+
+完成後，請把**整個產出的資料夾**完整交給內網使用者，不要只挑幾個 `.ps1` 檔案。
+
+---
+
+### 完整說明請看哪裡
+
+完整白話 SOP 請參閱 [`docs/使用指南.md`](docs/使用指南.md)：
+
+- **準備者**：請看「最短版本」與「我是有網路的準備者」
+- **內網使用者**：請看「最短版本」與「我是內網使用者」
+- **問題排除**：請看「如果失敗怎麼辦」
+- **生成腳本 / 除錯範本**：請看使用指南後段的「生成腳本範本」與「除錯範本」
+
+## 使用場景
+
+```text
+有網路的準備電腦                           內網使用電腦                         外部 AI 環境
+┌──────────────────────┐              ┌──────────────────────┐              ┌──────────────────────┐
+│ 1. prepare bundle    │              │ 1. install.ps1       │              │ 1. 上傳蒐集成果        │
+│ 2. 複製整個資料夾     │  ────────▶   │ 2. launch-chrome.ps1 │  ────────▶   │ 2. AI 協助整理腳本     │
+│                      │              │ 3. collect.ps1       │              │ 3. 帶回內網測試        │
+└──────────────────────┘              └──────────────────────┘              └──────────────────────┘
+```
+
+## 功能特色
+
+| 功能 | 白話說明 |
+|------|----------|
+| 頁面結構快照 | 把網站畫面的結構存下來，方便 AI 理解頁面 |
+| 截圖 | 把畫面直接存成圖片，方便比對 |
+| 操作錄製 | 把你的操作過程錄下來，之後更容易讓 AI 重建流程 |
+| 密碼保護 | 會盡量把錄製過程中疑似密碼的內容先做保護處理 |
+| 摘要報告 | 自動產出本次蒐集的簡短整理 |
+| 問題紀錄 | 失敗時會留下日誌，方便請技術人員或 AI 協助判斷 |
+
+## 你最常會用到的檔案
+
+| 檔案 / 目錄 | 給誰用 | 用途 |
+|-------------|--------|------|
+| `install.ps1` | 內網使用者 | 檢查這份工具包是否完整可用 |
+| `launch-chrome.ps1` | 內網使用者 | 啟動專用 Chrome 視窗 |
+| `collect.ps1` | 內網使用者 | 開始蒐集素材 |
+| `scripts/prepare-offline-bundle.ps1` | 準備者 | 在有網路電腦先準備完整工具包 |
+| `docs/使用指南.md` | 所有人 | 最完整、最白話的 SOP |
+| `materials\` | 內網使用者 | 每次蒐集完成後的成果位置 |
+| `logs\` | 所有人 | 出問題時可拿來排查的紀錄 |
+
+## 進一步操作
+
+### 一般使用者最常用的命令
+
+| 命令 | 用途 |
+|------|------|
+| `.\collect.ps1` | 互動模式，最適合第一次使用 |
+| `.\collect.ps1 --snapshot` | 只快速抓目前這一頁 |
+| `.\launch-chrome.ps1` | 重新開專用 Chrome 視窗 |
+
+### 蒐集完成後，結果會在哪裡？
+
+每次蒐集完成後，通常會在：
+
+```text
+materials\時間戳記_任務名稱\
+```
+
+看到這些常見內容：
+
+- `aria-snapshots\`
+- `screenshots\`
+- `recordings\`
+- `metadata.json`
+- `summary-report.md`
+
+如果工具執行失敗，請再看：
+
+```text
+logs\
+```
+
+### 如果你是技術人員，手上只有原始專案
+
+這時才需要考慮這些技術指令：
 
 ```powershell
-# 啟用 git hook（一次性設定）
+.\setup.ps1
+npm run setup
+```
+
+如果你是 macOS / Linux 維護者，可改用：
+
+```bash
+./scripts/setup.sh
+```
+
+> 這些不是一般內網使用者的主流程。一般使用者請優先看 `install.ps1`、`launch-chrome.ps1`、`collect.ps1`。
+
+## 常見問題
+
+### 內網使用者常見問題
+
+| 問題 | 你可以先怎麼做 |
+|------|----------------|
+| `install.ps1` 失敗 | 這通常代表工具包不完整，請直接找準備者重做 |
+| 電腦沒有 npm | 一般使用者不用自己裝 npm，先照主流程操作即可 |
+| Chrome 沒有正常啟動 | 重新執行 `.\launch-chrome.ps1`，並確認 Google Chrome 已安裝 |
+| `collect.ps1` 沒抓到頁面 | 確認你是在專用 Chrome 裡登入，且目標頁面已打開 |
+| 只想快速驗證工具有沒有正常 | 試 `.\collect.ps1 --snapshot` |
+
+### 準備者常見問題
+
+| 問題 | 你可以先怎麼做 |
+|------|----------------|
+| 不確定要用哪支腳本打包 | 用 `.\scripts\prepare-offline-bundle.ps1` |
+| 不確定要交哪些東西給內網同事 | 交**整個產出資料夾**，不要只交幾個 `.ps1` |
+| 想確認包是否完整 | 進到產出資料夾後先跑一次 `.\install.ps1` |
+| 手上只有原始專案、還沒補齊環境 | 才考慮 `.\setup.ps1` 或 `npm run setup` |
+
+## 安全防護
+
+### 一般使用者要記住的事
+
+- 不要把密碼、token、`.env` 檔案一起帶出內網
+- 錄製檔與截圖如果拍到敏感資訊，帶出前請先確認
+- 如果要請 AI 幫忙，優先上傳同一次任務資料夾的內容，不要把不同任務混在一起
+
+### 維護者額外可用的保護機制
+
+本專案有提供 git hook，可在 commit 前先掃描錄製檔是否疑似含敏感資訊：
+
+```powershell
 git config core.hooksPath .githooks
 ```
 
-Hook 會在 commit 前掃描任務子資料夾中的錄製檔（例如 `materials\YYYYMMDDhhmmss_錄製名稱\recordings\*.ts`），若偵測到疑似密碼（`.fill(selector, 'password')`）、token 或 secret，將阻止 commit 並提示修正。
+如果你只是一般內網使用者，這一段通常不用處理。
 
-> 💡 **建議**：先執行 `git config core.hooksPath .githooks` 啟用防護，再開始使用工具。
+## 技術支援
 
----
+遇到問題時，建議這樣做：
 
-## 📝 授權
+1. 先看 `logs\` 裡最新的 `.log` 檔案
+2. 再看 [`docs/使用指南.md`](docs/使用指南.md) 的問題排除段落
+3. 如果還是不行，把相關日誌與同一次蒐集成果交給技術人員或 AI 協助判斷
+
+## 授權
 
 本專案為私人專案，僅供內部使用。
-
-## 📞 技術支援
-
-遇到問題時：
-1. 查看 `logs/` 目錄下的日誌檔案
-2. 將日誌檔案交給 AI 分析（日誌包含完整的環境、參數、錯誤堆疊資訊）
-3. 參閱 [使用指南 - 問題排除](docs/使用指南.md)
