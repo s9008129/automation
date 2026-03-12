@@ -20,53 +20,40 @@
 
 ### 前置需求
 
-- Windows 11 + PowerShell 7.x（主要目標環境）
-- macOS / Linux（相容）
-- Node.js v20+
-- Google Chrome
+- 一般使用者：Windows 11 + PowerShell 7.x + Google Chrome
+- 技術人員 / 打包者：另外需要 Node.js v20+（用來準備完整離線包）
+- macOS / Linux（相容，但本文以 Windows PowerShell 為主）
 
 ### 安裝
 
 ```powershell
-# 1. 一鍵安裝所有依賴（跨平台）
-npm run setup
-```
-
-```powershell
-# Windows（PowerShell）
-.\setup.ps1
+# 1. 一般使用者請直接執行這支
+.\install.ps1
 ```
 
 ```bash
-# macOS / Linux
+# macOS / Linux（相容流程）
 ./scripts/setup.sh
 ```
 
-> 離線環境請使用 `npm run setup:offline`，並預先準備 `node_modules/` 與 Playwright 瀏覽器（建議放在 `.playwright-browsers/` 並設定 `PLAYWRIGHT_BROWSERS_PATH`）。
+> 這套工具可以做成**完整離線包**，因此一般使用者電腦不需要先有 npm。
+> 如果你是要幫同事準備內網用安裝包的技術人員，請先執行 `.\scripts\prepare-offline-bundle.ps1`。
 
 ### 使用
 
 ```powershell
 # 2. 啟動 Chrome Debug 模式（獨立 profile，不影響日常使用）
-npm run start:chrome
-```
-
-```powershell
-# Windows（PowerShell）
 .\launch-chrome.ps1
-```
-
-```bash
-# macOS / Linux
-./scripts/launch-chrome.sh
 
 # 3. 在 Chrome 中登入你的內部網站
 
 # 4. 開啟另一個 PowerShell 視窗，開始蒐集
-npm run collect
+.\collect.ps1
 ```
 
-> 每次執行 `npm run collect`，請以新的**任務子資料夾**區分本次蒐集成果。  
+> macOS / Linux 請改用 `./scripts/launch-chrome.sh` 與對應 shell 流程；本文主線以 Windows PowerShell 為主。
+
+> 每次執行 `.\collect.ps1`，請以新的**任務子資料夾**區分本次蒐集成果。
 > 命名格式：`YYYYMMDDhhmmss_錄製名稱`，時間戳一律使用 **Asia/Taipei**。  
 > 例如：`materials\20260310143000_登入流程\`
 
@@ -77,7 +64,7 @@ npm run collect
 ┌────────────────────────┐                   ┌──────────────────────┐
 │ 1. .\launch-chrome.ps1 │                   │ 5. 把素材丟給 AI       │
 │ 2. 登入內部網站         │  ──帶出任務素材▶ │ 6. AI 生成自動化腳本    │
-│ 3. npm run collect     │                   │ 7. 帶回內網測試        │
+│ 3. .\collect.ps1       │                   │ 7. 帶回內網測試        │
 │ 4. 帶走 materials\     │  ◀────帶入─────  │                       │
 │    <任務子資料夾>\     │                   │                       │
 └────────────────────────┘                   └──────────────────────┘
@@ -109,6 +96,7 @@ automation/
 │   ├── pre-commit-scan.ps1       # 掃描錄製檔敏感模式（PowerShell）
 │   ├── pre-commit-scan.sh        # 掃描錄製檔敏感模式（bash）
 │   ├── launch-chrome.sh          # macOS/Linux Chrome Debug 啟動
+│   ├── prepare-offline-bundle.ps1 # 技術人員準備完整離線包
 │   ├── setup.sh                  # macOS/Linux 安裝腳本
 │   ├── acceptance-macos.sh       # macOS 驗收腳本（含離線 mock）
 │   └── alt-verify-macos.sh       # macOS 替代驗收（無 Playwright 環境）
@@ -123,9 +111,12 @@ automation/
 │       ├── recordings/           # Codegen 錄製
 │       ├── metadata.json         # 蒐集記錄
 │       └── summary-report.md     # 摘要報告
+├── collect.ps1                   # Windows 一般使用者蒐集入口
 ├── collect-materials.ts          # 核心蒐集引擎
 ├── collect-materials-config.json # 自動模式設定檔
+├── install.ps1                   # Windows 一般使用者安裝入口
 ├── launch-chrome.ps1             # Chrome Debug 啟動腳本
+├── runtime\                      # 可選：完整離線包內建 Node.js runtime
 ├── setup.ps1                     # 一鍵安裝腳本
 ├── package.json                  # 專案設定
 └── tsconfig.json                 # TypeScript 設定
@@ -137,15 +128,17 @@ automation/
 
 | 命令 | 說明 |
 |------|------|
-| `npm run collect` | 互動模式（推薦新手）|
-| `npm run collect:auto` | 自動模式（依設定檔）|
-| `npm run collect:snapshot` | 快照模式（擷取當前頁面）|
-| `npm run collect:record` | 錄製模式（啟動 Codegen）|
+| `.\collect.ps1` | 互動模式（推薦新手）|
+| `.\collect.ps1 --auto` | 自動模式（依設定檔）|
+| `.\collect.ps1 --snapshot` | 快照模式（擷取當前頁面）|
+| `.\collect.ps1 --record 登入流程` | 錄製模式（啟動 Codegen）|
+
+> 技術人員原有的 npm scripts 仍保留，但一般使用者建議直接使用 PowerShell 入口。
 
 ### 蒐集輸出位置
 
 - `materials/` 是蒐集素材的**根目錄**
-- 每次執行 `npm run collect`，都應使用新的**任務子資料夾**
+- 每次執行 `.\collect.ps1`，都應使用新的**任務子資料夾**
 - 任務子資料夾命名格式為 `YYYYMMDDhhmmss_錄製名稱`
 - 時間戳一律使用 **Asia/Taipei**
 - 當次任務輸出位於 `materials\<任務子資料夾>\` 下，常見內容包含：
@@ -170,6 +163,7 @@ automation/
 
 | 問題 | 解決方式 |
 |------|---------|
+| 一般使用者電腦沒有 npm | 直接執行 `.\install.ps1` 與 `.\collect.ps1`，不需要手動輸入 npm 指令 |
 | Chrome Debug 模式未啟動 | 執行 `.\launch-chrome.ps1` |
 | 端口 9222 被佔用 | 關閉所有 Chrome 後重新執行腳本 |
 | 找不到頁面（選到 chrome:// 內部頁面） | 已自動過濾，確保 Chrome 中有開啟目標網站 |

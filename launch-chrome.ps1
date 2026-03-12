@@ -23,11 +23,25 @@ param(
 
 # 遇到未預期錯誤就立即停止，避免後續步驟在不完整狀態下繼續執行。
 $ErrorActionPreference = "Stop"
+$script:TaipeiTimeZone = [System.TimeZoneInfo]::FindSystemTimeZoneById("Taipei Standard Time")
+
+function Get-TaipeiNow {
+    return [System.TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $script:TaipeiTimeZone)
+}
+
+function Format-TaipeiTimestamp {
+    param(
+        [switch]$ForFile
+    )
+
+    $format = if ($ForFile) { "yyyyMMdd-HHmmss" } else { "yyyy-MM-dd HH:mm:ss.fff" }
+    return (Get-TaipeiNow).ToString($format, [System.Globalization.CultureInfo]::InvariantCulture)
+}
 
 # 先建立日誌目錄與本次執行專用日誌檔，方便後續回報問題時追蹤。
 $LogDir = Join-Path $PSScriptRoot "logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
-$LogFile = Join-Path $LogDir ("launch-chrome-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
+$LogFile = Join-Path $LogDir ("launch-chrome-" + (Format-TaipeiTimestamp -ForFile) + ".log")
 
 # 同時輸出到畫面與日誌：一般使用者看畫面，技術排查看 log。
 function Write-Log {
@@ -41,7 +55,7 @@ function Write-Log {
         Write-Host ''
         return
     }
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $timestamp = Format-TaipeiTimestamp
     $line = "[{0}][{1}] {2}" -f $timestamp, $Level.ToUpper(), $Message
     Add-Content -Path $LogFile -Value $line
     Write-Host $Message -ForegroundColor $Color
@@ -53,7 +67,7 @@ function Write-LogOnly {
         [string]$Level,
         [string]$Message
     )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $timestamp = Format-TaipeiTimestamp
     $line = "[{0}][{1}] {2}" -f $timestamp, $Level.ToUpper(), $Message
     Add-Content -Path $LogFile -Value $line
 }
@@ -131,7 +145,7 @@ if ($portInUse) {
         Write-Log "INFO" "  下一步：" -Color Cyan
         Write-Log "INFO" "  1. 在 Chrome 中登入你的內部網站" -Color White
         Write-Log "INFO" "  2. 開啟另一個 PowerShell 視窗" -Color White
-        Write-Log "INFO" "  3. 執行 npm run collect 開始蒐集素材" -Color White
+        Write-Log "INFO" "  3. 執行 .\collect.ps1 開始蒐集素材" -Color White
         Write-Log "INFO" ""
         exit 0
     }
@@ -201,7 +215,7 @@ try {
     Write-Log "INFO" "  下一步：" -Color Cyan
     Write-Log "INFO" "  1. 在 Chrome 中登入你的內部網站" -Color White
     Write-Log "INFO" "  2. 開啟另一個 PowerShell 視窗" -Color White
-    Write-Log "INFO" "  3. 執行 npm run collect 開始蒐集素材" -Color White
+    Write-Log "INFO" "  3. 執行 .\collect.ps1 開始蒐集素材" -Color White
     Write-Log "INFO" ""
 } catch {
     # 失敗處理：Chrome 可能剛啟動還沒就緒，保留錯誤細節並給人工檢查網址。

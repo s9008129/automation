@@ -9,12 +9,15 @@
  *   4. HTML 原始碼（可選）
  *   5. iframe 深層結構（自動遞迴）
  *
- * 使用方式：
- *   npx tsx collect-materials.ts                    # 互動模式（推薦新手）
- *   npx tsx collect-materials.ts --auto             # 自動模式（依設定檔）
- *   npx tsx collect-materials.ts --snapshot         # 只擷取當前頁面快照
- *   npx tsx collect-materials.ts --record <name>    # 啟動 codegen 錄製
- *   npx tsx collect-materials.ts --config <path>    # 使用指定設定檔
+ * Windows 一般使用者：
+ *   .\collect.ps1
+ *   .\collect.ps1 --auto
+ *   .\collect.ps1 --snapshot
+ *   .\collect.ps1 --record <name>
+ *   .\collect.ps1 --config <path>
+ *
+ * 技術人員也可維持：
+ *   npm run collect -- --auto
  *
  * 目標環境：Windows 11 + PowerShell 7.x（也支援 macOS / Linux）
  */
@@ -24,6 +27,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
 import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 
 // ============================================================
 // 型別定義
@@ -150,6 +154,7 @@ interface InteractivePageCaptureResult {
 const TOOL_VERSION = '1.0.0';
 const DEFAULT_CDP_PORT = 9222;
 const DEFAULT_OUTPUT_DIR = './materials';
+const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url));
 // 獨立包的設定檔在同一層目錄
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'collect-materials-config.json');
 const LOG_DIR = path.join(process.cwd(), 'logs');
@@ -263,22 +268,74 @@ function formatError(error: unknown): { message: string; stack?: string } {
   return { message: String(error) };
 }
 
-function quoteCmdArg(value: string): string {
-  if (value === '') return '""';
-  if (!/[ \t"]/g.test(value)) return value;
-  return `"${value.replace(/"/g, '\\"')}"`;
-}
-
-function buildWindowsCommand(command: string, args: string[]): string {
-  return [command, ...args.map(quoteCmdArg)].join(' ');
-}
-
 function getArgValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   if (index < 0) return undefined;
   const value = args[index + 1];
   if (!value || value.startsWith('--')) return undefined;
   return value;
+}
+
+function getPrimaryCollectCommand(): string {
+  return process.platform === 'win32'
+    ? '.\\collect.ps1'
+    : 'npx tsx collect-materials.ts';
+}
+
+function printHelp(): void {
+  const primaryCommand = getPrimaryCollectCommand();
+  const usageLines = [
+    '',
+    '用法：',
+    `  ${primaryCommand}`,
+    `  ${primaryCommand} --auto`,
+    `  ${primaryCommand} --snapshot`,
+    `  ${primaryCommand} --record 登入流程`,
+    `  ${primaryCommand} --config .\\collect-materials-config.json`,
+    '',
+    '常用參數：',
+    '  --auto        依設定檔自動蒐集全部素材',
+    '  --snapshot    只擷取目前頁面快照',
+    '  --record NAME 啟動 Playwright Codegen 錄製',
+    '  --config PATH 使用指定設定檔',
+    '  --port N      覆蓋 CDP 連接埠（預設 9222）',
+    '  --help, -h    顯示這份說明',
+    '',
+  ];
+
+  if (process.platform === 'win32') {
+    usageLines.push('Windows 一般使用者請直接在專案根目錄執行 .\\collect.ps1。');
+    usageLines.push('技術人員原有 npm scripts 仍可繼續使用。');
+  } else {
+    usageLines.push('若未使用 PowerShell 入口，可改用 npx tsx collect-materials.ts。');
+  }
+
+  console.log(usageLines.join('\n'));
+}
+
+function resolvePlaywrightCliPath(): string {
+  const candidates = [
+    path.resolve(PROJECT_ROOT, 'node_modules', 'playwright', 'cli.js'),
+    path.resolve(process.cwd(), 'node_modules', 'playwright', 'cli.js'),
+  ];
+  const uniqueCandidates = [...new Set(candidates)];
+
+  for (const candidate of uniqueCandidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const finalHint = process.platform === 'win32'
+    ? '請確認專案已包含完整 node_modules，然後回到專案根目錄重新執行 .\\collect.ps1。'
+    : '請確認專案相依套件已完整安裝後再重試。';
+
+  throw new Error([
+    '❌ 找不到 Playwright CLI，無法啟動錄製模式。',
+    ...uniqueCandidates.map((candidate, index) => `檢查路徑 ${index + 1}: ${candidate}`),
+    '',
+    finalHint,
+  ].join('\n'));
 }
 
 function log(emoji: string, message: string, level: 'INFO' | 'WARN' | 'ERROR' = 'INFO'): void {
@@ -470,7 +527,7 @@ function redactConfigForLog(config: CollectConfig): CollectConfig {
 function loadConfig(configPath: string): CollectConfig {
   if (!fs.existsSync(configPath)) {
     logError(`找不到設定檔: ${configPath}`);
-    log('💡', '請先建立設定檔，或使用互動模式: npx tsx collect-materials.ts');
+    log('💡', `請先建立設定檔，或改用互動模式: ${getPrimaryCollectCommand()}`);
     process.exit(1);
   }
 
@@ -524,12 +581,20 @@ function loadConfig(configPath: string): CollectConfig {
 /** 取得 Playwright 版本 */
 function getPlaywrightVersion(): string {
   try {
-    const pkgPath = path.join(process.cwd(), 'node_modules', 'playwright', 'package.json');
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-      return pkg.version || 'unknown';
+    const candidatePaths = [
+      path.join(PROJECT_ROOT, 'node_modules', 'playwright', 'package.json'),
+      path.join(process.cwd(), 'node_modules', 'playwright', 'package.json'),
+    ];
+
+    for (const pkgPath of [...new Set(candidatePaths.map(candidate => path.resolve(candidate)))]) {
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+        return pkg.version || 'unknown';
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    // ignore
+  }
   return 'unknown';
 }
 
@@ -1553,27 +1618,18 @@ class MaterialCollector {
         return '';
       }
 
+      const playwrightCliPath = resolvePlaywrightCliPath();
       const codegenArgs = [
-        'playwright', 'codegen',
+        playwrightCliPath,
+        'codegen',
         '--target', 'javascript',
         '--output', outputFile,
         validatedUrl,
       ];
 
       const spawnOptions = { stdio: 'inherit' as const };
-      let codegenProcess: ReturnType<typeof spawn>;
-      if (process.platform === 'win32') {
-        const cmd = process.env.ComSpec || 'cmd.exe';
-        const commandLine = buildWindowsCommand('npx', codegenArgs);
-        writeLogContext('codegenCommand', { command: cmd, args: ['/d', '/s', '/c', commandLine], commandLine });
-        codegenProcess = spawn(cmd, ['/d', '/s', '/c', commandLine], {
-          ...spawnOptions,
-          windowsVerbatimArguments: true,
-        });
-      } else {
-        writeLogContext('codegenCommand', { command: 'npx', args: codegenArgs });
-        codegenProcess = spawn('npx', codegenArgs, spawnOptions);
-      }
+      writeLogContext('codegenCommand', { command: process.execPath, args: codegenArgs });
+      const codegenProcess = spawn(process.execPath, codegenArgs, spawnOptions);
 
       await new Promise<void>((resolve, reject) => {
         codegenProcess.on('close', (code: number | null) => {
@@ -2106,6 +2162,10 @@ async function main(): Promise<void> {
   // 入口流程：初始化日誌與環境，判斷使用者選擇的模式，再交給對應流程執行
   shutdownRequested = false;
   const args = process.argv.slice(2);
+  if (args.includes('--help') || args.includes('-h')) {
+    printHelp();
+    return;
+  }
   const runId = getTaipeiTimestampForFile();
   initLogger(runId);
   // 載入 .env（若有）以供 sanitize 與其他自動化流程使用
@@ -2318,6 +2378,11 @@ main().catch(error => {
   log('💡', '疑難排解：', 'WARN');
   log('💡', '  1. 確認 Chrome 已以 Debug 模式啟動（Windows: launch-chrome.ps1 / macOS: scripts/launch-chrome.sh）', 'WARN');
   log('💡', '  2. 確認 CDP 端口（預設 9222）沒有被佔用', 'WARN');
-  log('💡', '  3. 確認已執行 npm install 安裝依賴', 'WARN');
+  log('💡', '  3. 確認專案已包含 node_modules 與 Playwright 瀏覽器', 'WARN');
+  if (process.platform === 'win32') {
+    log('💡', '  4. Windows 一般使用者請回到專案根目錄執行 .\\collect.ps1', 'WARN');
+  } else {
+    log('💡', '  4. 若未使用 PowerShell 入口，可改用 npx tsx collect-materials.ts', 'WARN');
+  }
   process.exit(1);
 });
