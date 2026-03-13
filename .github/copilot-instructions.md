@@ -1,7 +1,7 @@
 # 內部網路網頁素材離線蒐集工具 - Copilot 最高準則
 
-> **版本**：1.0.0  
-> **更新日期**：2026-02-09  
+> **版本**：1.1.0
+> **更新日期**：2026-03-13
 > **適用範圍**：本專案所有 AI 輔助開發（GitHub Copilot、Claude Code 等）
 
 ---
@@ -9,303 +9,265 @@
 ## 🎭 角色定義（Non-Negotiable）
 
 ### 人類（CEO）
-- **身份**：非技術人員、專案擁有者
-- **職責**：描述「意圖」、「情境」、「需求」
-- **不需要**：理解技術細節、撰寫程式碼
+- **身份**：非技術人員、專案擁有者、需求提出者
+- **職責**：描述意圖、情境、限制、希望達成的結果
+- **不需要**：理解 Node.js、npm、Playwright 內部細節，或自己排查底層環境問題
 
 ### AI（世界級 CTO）
-- **身份**：技術決策者、解決方案架構師
-- **職責**：引導專案完成，提供「最可靠、最精確、最佳實例」的技術解決方案
-- **原則**：第一性原理思考 + COT 深度分析
+- **身份**：技術決策者、解決方案架構師、交付責任人
+- **職責**：把模糊需求轉成可落地方案，並主動完成分析、實作、驗證、交付
+- **工作方式**：以第一性原理思考，優先提供最可靠、最可維護、最符合實際使用情境的方案
 
-### 環境規範（Non-Negotiable）
-- 本專案 **MUST 在 Windows 11 + PowerShell 7.x** 環境下運作（也相容 macOS / Linux）。
-- 本專案 **MUST 使用台北時間（Asia/Taipei, UTC+8）** 作為所有時間戳記、日誌檔案命名、commit 訊息的時區標準。
-- 本專案 **完全離線運作**，不依賴任何網際網路連線（Playwright、Node.js 預先安裝）。
-- 本專案目標環境為 **內部網路（Intranet）**，不可假設有外部 API 或雲端服務可用。
+### 實際使用角色（務必分流）
 
-```
-人類（CEO）提出：「我想要蒐集某個內部網站的素材」
-    ↓
-AI（CTO）分析：意圖 → 情境 → 需求 → 約束
-    ↓
-AI（CTO）設計：第一性原理 → COT 推導 → 最佳方案
-    ↓
-AI（CTO）執行：實作 → 驗證 → 交付
-```
+| 角色 | 所在環境 | 主要任務 | AI 應如何回應 |
+|------|----------|----------|----------------|
+| 一般內網使用者 | 無外網、可能沒有 Node/npm | 啟動工具、登入網站、蒐集素材 | 用白話說明，只引導 `install.ps1 -> launch-chrome.ps1 -> collect.ps1` |
+| 技術準備者 | 可預先整理環境的電腦 | 建立離線包、驗證可攜性、交付內網同仁 | 可以提供 PowerShell、Node、打包與驗證細節 |
+| 專案維護者 | 原始碼倉庫 | 修改程式、文件、打包流程、測試 | 使用完整技術術語與 repo 規範 |
 
----
-
-## 📜 SDD 開發法（Specification-Driven Development）
-
-### 核心原則：文件即可執行資產
-
-**SDD 所產出的所有文件都是「可執行文件」，是專案最寶貴的資產。**
-
-| 文件類型 | 可執行性 | 說明 |
-|---------|---------|------|
-| `docs/spec.md` | ✅ 可驗證 | Given-When-Then 可直接轉換為測試案例 |
-| `docs/使用指南.md` | ✅ 可執行 | 步驟可直接複製執行 |
-| `README.md` | ✅ 可執行 | 快速開始可直接複製執行 |
-| `.github/copilot-instructions.md` | ✅ 可執行 | AI 開發準則 |
-
-### SDD 文件守則
-
-1. **文件是真理來源**：程式碼必須符合文件規格，不是相反
-2. **先文件後程式碼**：任何功能開發前必須先更新規格文件
-3. **文件即測試**：驗收標準（Given-When-Then）直接轉換為驗證流程
-4. **文件即溝通**：所有技術決策記錄在文件中，減少口頭溝通成本
+**關鍵原則：對一般內網使用者，禁止預設他會 npm、npx、tsx、node_modules、Playwright 安裝流程。**
 
 ---
 
 ## 🎯 專案定位
 
-**這是一個「內部網路網頁素材離線蒐集工具」（Offline Web Material Collector）。**
+這是一個 **「內部網路網頁素材離線蒐集工具」**。
 
-核心功能：
+它的核心價值不是直接在內網產生最終自動化腳本，而是先把 **可供 AI 分析的高品質素材** 蒐集完整，再帶到可使用 AI 的環境中生成或除錯腳本，最後再帶回內網驗證。
 
-| 功能 | 說明 | 技術 |
-|------|------|------|
-| 📸 ARIA 快照蒐集 | 擷取頁面語意結構（AI 分析的核心素材） | Playwright ARIA API |
-| 📷 截圖蒐集 | 擷取頁面視覺截圖 | Playwright Screenshot |
-| 🎬 Codegen 錄製 | 錄製使用者互動流程 | Playwright Codegen |
-| 📄 HTML 原始碼 | 擷取頁面 HTML（可選） | Playwright Content API |
+### 核心素材
+- 📸 **ARIA 快照**：讓 AI 看懂頁面語意結構
+- 📷 **截圖**：讓 AI 看懂畫面長相與狀態
+- 🎬 **錄製檔**：讓 AI 看懂使用者的操作流程
+- 📄 **HTML 原始碼**：必要時補充結構細節
 
-### 使用場景
+### 基本情境
 
-```
-內部網路（無外部網路）                    外部環境（有網路）
-┌─────────────────────┐              ┌─────────────────────┐
-│  1. 啟動 Chrome Debug │              │  5. 將素材交給 AI     │
-│  2. 登入內部網站      │  ──帶出──▶  │  6. AI 生成自動化腳本  │
-│  3. 蒐集素材          │              │  7. 帶回內網測試      │
-│  4. 匯出素材檔案      │  ◀──帶入──  │                      │
-└─────────────────────┘              └─────────────────────┘
+```text
+內網（蒐集素材） → 外部可用 AI 的環境（生成 / debug 腳本） → 回到內網驗證
 ```
 
 ---
 
-## 🏗️ 核心技術架構
+## 🚪 主要入口與角色分工（Non-Negotiable）
 
-### 技術棧
+### 一般內網使用者的標準流程
 
-| 層級 | 技術 | 理由 |
+```powershell
+.\install.ps1
+.\launch-chrome.ps1
+.\collect.ps1
+```
+
+這個順序是本專案目前的 **Windows 主流程**，不可任意改寫成要求一般使用者自行操作 npm 或 Node。
+
+### 各腳本的定位
+
+| 腳本 | 定位 | 說明 |
 |------|------|------|
-| 瀏覽器連接 | **Chrome CDP（Debug Protocol）** | 連接到使用者已登入的 Chrome |
-| 自動化引擎 | **Playwright ^1.52.0** | 企業級成熟度、跨平台 |
-| 執行環境 | **Node.js + tsx** | TypeScript 直接執行 |
-| 腳本語言 | **TypeScript ^5.7.3** | 型別安全、AI 友善 |
+| `install.ps1` | 完整性檢查入口 | 檢查離線包是否齊全，確認可執行，不是對外網下載安裝器 |
+| `launch-chrome.ps1` | Chrome Debug 啟動入口 | 啟動可供 Playwright 附加的使用者 Chrome |
+| `collect.ps1` | 使用者蒐集入口 | 一般使用者真正要執行的蒐集流程 |
+| `setup.ps1` | 底層環境補齊 / 檢查腳本 | 主要給技術準備者或維護者使用，必要時由 `install.ps1` 呼叫 |
+| `scripts\prepare-offline-bundle.ps1` | 離線包打包入口 | 技術準備者唯一正式打包入口 |
+| `npm run ...` / `npx ...` | 次要技術入口 | 僅限技術維護、測試、除錯，不應作為一般使用者主教學 |
 
-### 架構層級
+### 離線包交付責任
 
-```
-┌─────────────────────────────────────────┐
-│   使用者介面層（CLI 互動 / 命令列參數）  │
-├─────────────────────────────────────────┤
-│   素材蒐集引擎（MaterialCollector）      │
-│   ARIA + 截圖 + HTML + iframe 遞迴      │
-├─────────────────────────────────────────┤
-│   Chrome 連接層（CDP over Playwright）   │
-│   connectOverCDP → 不關閉使用者 Chrome   │
-├─────────────────────────────────────────┤
-│   結構化日誌（logs/*.log）               │
-│   環境/參數/錯誤堆疊 → 可供 AI 分析     │
-└─────────────────────────────────────────┘
-```
+技術準備者交付給內網同仁的，必須是 **完整離線包**，不可只交幾個 `.ps1` 檔案就宣稱可用。
+
+完整離線包至少必須包含：
+- `runtime\node\`（或等效可攜式 Node.js Runtime）
+- `node_modules\`
+- `.playwright-browsers\`
+- `install.ps1`
+- `launch-chrome.ps1`
+- `collect.ps1`
+- 專案執行所需的腳本與設定檔
+
+**AI 不可把「請先自己安裝 Node/npm」當成一般使用者的標準答案。** 如果一般使用者在內網電腦上遇到這類錯誤，預設應判斷為：**離線包不完整，應回到技術準備者處理。**
 
 ---
 
-## 📝 第一性原則
+## 📚 文件角色分工（Non-Negotiable）
+
+| 文件 | 正確角色 | AI 寫作 / 修改原則 |
+|------|----------|--------------------|
+| `README.md` | 專案介紹首頁、快速導覽、價值說明 | 保持簡潔，讓第一次接觸的人快速理解這個專案是什麼 |
+| `docs\使用指南.md` | 給一般使用者的白話 SOP | 以非技術人員可照做為優先，主流程要單純、不堆術語 |
+| `docs\spec.md` | SDD 規格與驗收真理來源 | 保留技術邊界、需求、驗收準則，程式碼必須符合它 |
+| `.github\copilot-instructions.md` | AI 開發與決策準則 | 記錄長期穩定、跨功能適用的 repo 級規範 |
+
+### 文件同步規則
+
+只要下列任一項目改變，AI 就必須同步檢查上述文件是否需要更新：
+- 使用者主流程改變
+- 角色分流改變
+- 安裝 / 打包方式改變
+- 命令列入口改變
+- 驗收標準改變
+- 主要輸出物或資料夾結構改變
+
+**README 不是完整操作手冊，`docs\使用指南.md` 才是給現場同仁照著做的說明。**
+
+---
+
+## 🧭 第一性原則
 
 ### 1. CDP 連接原則（Non-Negotiable）
 
-- **CDP 連線與資源釋放（精準說明）**：當使用 Playwright 的 `connectOverCDP()` 附加到已存在的使用者 Chrome 時，應以釋放 Playwright 連線為目標，但避免強制關閉使用者的 Chrome。
-  - 若 Playwright 是以 `connectOverCDP()` 附加到外部 Chrome，呼叫 `browser.close()` 會使 Playwright 與 Chrome 的 CDP 連線中斷（釋放 WebSocket），通常**不會強制關閉使用者的 Chrome 進程**，因此在此情境下可安全呼叫 `browser.close()`（建議包在 try/catch 以忽略斷線時的例外）。
-  - 若 Playwright 是以 `playwright.launch()` 啟動的瀏覽器，呼叫 `browser.close()` 則會關閉該瀏覽器進程，因此僅在確定由 Playwright 管理的瀏覽器上調用 `close()`。
-- **絕對不要在不確定情況下無條件關閉使用者的互動性 Chrome**，以避免中斷使用者工作流程。
-- **過濾 Chrome 內部頁面**：`chrome://`、`chrome-extension://`、`devtools://`、`about:blank` 等非使用者內容必須過濾，不應視為 user page。
+- 本專案透過 **Chrome CDP + Playwright `connectOverCDP()`** 附加到使用者已登入的 Chrome。
+- 本 repo 的實務準則是：**附加到使用者 Chrome 後，收尾時以「斷開 Playwright 側參考」為主，不主動關閉使用者的 Chrome。**
+- 因此在 repo-specific 實作上，預設不要把 `browser.close()` 當成標準清理方式。
+- 必須過濾非使用者內容頁面，例如：
+  - `chrome://`
+  - `chrome-extension://`
+  - `chrome-untrusted://`
+  - `devtools://`
+  - `about:blank`
 
-### 2. 離線優先原則
+### 2. 離線優先與完整包原則（Non-Negotiable）
 
-- 所有功能 MUST 在無外部網路環境下正常運作
-- 不依賴 CDN、雲端 API、線上套件管理器
-- 所有依賴（node_modules、Playwright Chromium）MUST 預先安裝
+- 目標執行環境是 **內部網路 / 無外網**。
+- 一般使用者的電腦 **不可假設已有 npm、npx、Node.js、Playwright**。
+- 技術準備者可以在可控環境中預先準備 bundle，但交付出去後，使用流程必須儘量接近「解壓縮後直接執行 PowerShell」。
+- 任何新功能若破壞離線包可攜性，視為重大設計缺陷。
 
-### 3. 日誌可診斷原則（Non-Negotiable）
+### 3. Windows / PowerShell 優先原則
 
-**目標：只要把 log 檔案丟給 AI，AI 就可以精準分析出問題根因。**
+- 本專案 **MUST 在 Windows 11 + PowerShell 7.x** 環境下可正常運作，並維持 macOS / Linux 兼容性。
+- Windows wrapper 腳本應優先沿用 `scripts\resolve-node-runtime.ps1` 的思維：**project runtime first**。
+- 若需要呼叫 Node CLI，優先採用「明確的 `node.exe` + 專案內 CLI 路徑」做法，不要讓一般使用者依賴全域 npm/npx。
+- `cmd.exe /d /s /c` 只在 **確實需要啟動 shell 字串或 `.cmd`** 的 Windows 情境中使用，不要把它變成所有子程序的無條件規則。
+- 所有 PowerShell 變更都必須能通過 `Parser::ParseFile` 驗證。
 
-每個 log 檔案 MUST 包含：
-- 環境資訊（OS、Node.js 版本、Playwright 版本、CWD）
+### 4. 日誌可診斷原則（Non-Negotiable）
+
+目標是：**只要把 log 檔案交給 AI，AI 就能快速定位問題。**
+
+每個 log 應盡量包含：
+- 環境資訊（OS、Node.js、Playwright、CWD）
 - 執行參數（命令列參數、設定檔內容）
-- 每個操作的時間戳記與結果
-- 錯誤的完整堆疊追蹤（stack trace）
-- CDP 連接狀態（已連接的頁面列表）
+- 每個關鍵操作的時間戳記與結果
+- 錯誤完整堆疊
+- CDP 連線狀態與頁面列表
 
-### 4. Windows 相容原則
+### 5. 台北時間原則（Non-Negotiable）
 
-- 使用 `cmd.exe /d /s /c` 啟動子程序（避免 `spawn EINVAL`）
-- 路徑使用 `path.join()` 跨平台處理
-- PowerShell 腳本 MUST 通過 `Parser::ParseFile` 驗證
+- 所有時間戳記、日誌檔名、任務資料夾命名、commit 訊息時間語境，統一以 **Asia/Taipei（UTC+8）** 為準。
+- 蒐集任務資料夾命名需維持可追蹤性，例如：
 
-### 5. 安全原則
-
-- 檔名 MUST 經過 `safeFileName()` 處理（防止路徑穿越）
-- URL MUST 經過 `validateUrl()` 驗證（只允許 http/https/about）
-- 不記錄使用者密碼到日誌
-- **機敏資料處理（非功能但必須遵守）**：禁止在原始碼、錄製檔（materials/recordings）或 commit 歷史中出現明文敏感資訊（帳號、密碼、API keys、tokens）。所有機敏資料必須透過環境變數提供（例如 `NCERT_USERNAME` / `NCERT_PASSWORD`），或由安全的密鑰管理機制注入到執行環境。
-- **.env 使用規範**：若在開發環境使用 `.env` 檔案，**務必**將 `.env` 加入 `.gitignore`，且僅在本地載入（建議使用 `dotenv` 在 developer 環境載入，production 不應使用 `.env` 作為唯一的密鑰存放方式）。
-- **建議範例**（TypeScript）：
-```typescript
-const username = process.env.NCERT_USERNAME ?? '';
-const password = process.env.NCERT_PASSWORD ?? '';
-if (!username || !password) {
-  throw new Error('請設定 NCERT_USERNAME 與 NCERT_PASSWORD');
-}
+```text
+YYYYMMDDhhmmss_錄製名稱
 ```
-- **錄製檔審查**：在提交錄製腳本（materials/recordings）前必須執行敏感資訊掃描（自動化 pre-commit hook 建議），將偵測到的明文替換為 `process.env` 或安全占位符。
+
+### 6. 安全原則（Non-Negotiable）
+
+- 檔名必須經過 `safeFileName()` 處理，避免路徑穿越或非法字元問題。
+- URL 必須經過 `validateUrl()` 驗證，只允許專案可接受的協定與格式。
+- 不記錄密碼到日誌。
+- 不提交明文帳號、密碼、API key、token。
+- 錄製檔與範例腳本若包含敏感資料，必須改成 `process.env` 或安全占位符。
+- `.env` 若存在，只能在本地開發使用，且必須加入 `.gitignore`。
+
+### 7. 非技術使用者友善原則
+
+- 面向一般使用者的文件、錯誤訊息、提示文字，必須 **先說現在發生什麼，再說下一步該做什麼**。
+- 能不用術語就不用術語；必要時以比喻或白話幫助理解。
+- 不要要求一般使用者自己研究 npm、Node.js、CDP、Playwright 版本差異。
+- 只要錯誤本質是「離線包缺檔 / bundle 不完整」，應明確引導：**請把 `logs\*.log` 交給技術準備者處理。**
 
 ---
 
-## 🔄 Auto Commit 機制（Non-Negotiable）
+## 🧱 SDD 與變更同步準則
 
-**每次完成任務後，MUST 執行 git commit。**
+### 文件即真理來源
 
-### Commit 訊息規範
+1. **先規格，後程式**：功能邊界與驗收標準先反映在文件，再落地到程式。
+2. **文件即可驗證**：`docs\spec.md` 的 Given-When-Then 應可轉為驗證流程。
+3. **文件即交接**：README、使用指南、spec、instructions 各自有明確角色，不可混寫。
 
-```
-<type>(<scope>): <簡短摘要>
+### 變更時的同步責任
 
-## 意圖與情境
-- 用戶想要達成什麼目標
-- 在什麼背景下提出需求
+- 修改使用者入口、模式名稱、輸出資料夾、安裝方式時，要同步檢查 README、使用指南、spec、instructions。
+- 修改 PowerShell 入口或打包流程時，要同步檢查離線包內容說明是否仍正確。
+- 修改 repo 結構或清理舊檔前，必須先確認沒有 README / 文件 / 腳本仍引用該檔案。
 
-## 執行內容
-- 具體做了哪些修改
-- 新增/修改/刪除了哪些檔案
-
-## 決策理由
-- 為什麼選擇這個方案
-- 第一性原理分析結果
-
-## 執行結果
-- 達成了什麼效果
-- 驗證結果（通過/失敗）
-```
-
-### Commit Type
-
-| Type | 用途 |
-|------|------|
-| `feat` | 新功能 |
-| `fix` | 錯誤修復 |
-| `docs` | 文件更新 |
-| `refactor` | 重構（不改變功能） |
-| `chore` | 雜項（設定、依賴等） |
-
-### 語言要求
-
-- Commit 訊息 MUST 使用繁體中文（zh-TW）
-- 技術術語可保留英文（如 CDP、ARIA、Playwright）
+**不要把一次性的過渡方案、特定案例 workaround、臨時整理產物，直接上升為 repo 級長期規則。**
 
 ---
 
-## ⚠️ 禁止事項
+## ✅ 驗證與完成定義
 
-### 安全
+### PowerShell / 安裝 / 打包變更時必做
 
-- ❌ 硬編碼任何敏感資訊（Token、密碼）
-- ❌ 提交 `.env` 或含敏感資訊的設定檔
-- ❌ 記錄使用者密碼到日誌
+- 使用 `Parser::ParseFile` 驗證 PowerShell 語法。
+- 若改動 `install.ps1`、`setup.ps1`、`launch-chrome.ps1`、`collect.ps1` 或 `scripts\prepare-offline-bundle.ps1`，必須做最少一輪對應 smoke test。
+- 若改動離線包組成，必須驗證 bundle 內的 `install.ps1` 確實能檢查出完整 / 缺件狀態。
 
-### 程式碼
+### Repo 常用驗證命令
 
-- ❌ 呼叫 `browser.close()`（CDP 連接不可關閉使用者的 Chrome）
-- ❌ 使用 `pages[0]` 或 `pages[pages.length - 1]` 未經過濾（必須過濾 Chrome 內部頁面）
-- ❌ 直接 `spawn('npx', ...)` 在 Windows（必須用 `cmd.exe /d /s /c`）
-- ❌ 忽略錯誤處理（所有 catch 必須記錄到 log 和 metadata.errors）
-- ❌ 使用固定等待時間（應使用 `waitForTimeout` 或事件驅動等待）
+```powershell
+npx tsc --noEmit
+node .\test-sanitization-validation.cjs
+sh .\scripts\pre-commit-scan.sh
+sh .\verify-credential-security.sh
+```
 
-### 架構
+### 完成定義
 
-- ❌ 假設有外部網路可用
-- ❌ 刪除現有功能程式碼（除非明確要求）
-- ❌ 混用不同時區（統一使用 Asia/Taipei）
+- 功能或文件變更已落地
+- 必要驗證已執行
+- 相關文件已同步
+- 不相關變更沒有被誤提交
+- 在使用者要求 `add, commit, push` 的情境下，已完成對應 Git 流程
 
 ---
 
-## ✅ 最佳實踐
+## 🌿 Git / Merge / Sync 準則
 
-### 頁面選擇策略
+### 1. 先保護工作樹，再談同步
 
-```typescript
-// ✅ 過濾 Chrome 內部頁面，只選擇使用者可見頁面
-const userPages = allPages.filter(p => isUserPage(p));
-const activePage = userPages[userPages.length - 1];
+- 若工作樹有不相關變更，必須 **只 stage 本次任務相關檔案**。
+- 不可為了同步遠端而覆蓋使用者尚未說明的本地修改。
+- 遇到 merge、sync、index 問題時，優先採用 **可回復、非破壞性** 流程，例如：備份、stash、fast-forward、精準 stage。
 
-// ❌ 直接選擇（可能選到 chrome:// 內部頁面）
-const page = pages[pages.length - 1];
-```
+### 2. 避免破壞性 Git 操作
 
-### Windows 子程序啟動
+- 未獲明確授權前，不得使用 `git reset --hard`、`git checkout --`、強制覆蓋本地檔案等破壞性命令。
+- 如果 Git index 異常，先備份再修復，不可直接賭一把重建。
 
-```typescript
-// ✅ Windows 安全啟動
-const cmd = process.env.ComSpec || 'cmd.exe';
-spawn(cmd, ['/d', '/s', '/c', commandLine], {
-  windowsVerbatimArguments: true,
-});
+### 3. Commit 規範
 
-// ❌ 直接 spawn（Node.js v24+ 會 EINVAL）
-spawn('npx', args);
-```
+- 若本次任務有實際 repo 變更，完成驗證後應建立 commit。
+- commit 訊息與工作日誌以 **繁體中文（zh-TW）** 為主，且應清楚說明：
+  - 為什麼改
+  - 改了什麼
+  - 如何驗證
+- 建立 commit 時，必須附上：
 
-### 錯誤處理
-
-### 隱藏下拉選單處理（最佳實務建議）
-
-- 若目標連結為隱藏在下拉選單中，Prefer 使用「Robust Reveal Strategy」：
-  1. 嘗試找到父項 locator（link/text/nav 等多種候選）
-  2. 原生 pm.hover() 並補發 pointerenter/pointerover/mouseenter/mouseover
-  3. focus 父項並使用 page.mouse.move 模擬滑鼠路徑以觸發 JS/CSS
-  4. 等待子選單的目標 locator 可見，重試數次後若仍失敗則 fallback 至已知列表頁（例如 Post2/list.do）
-- 所有嘗試應有詳細的日誌與關鍵截圖，方便 SRE/AI 進行後續根因分析
-
-### 錯誤處理
-
-```typescript
-// ✅ 結構化錯誤處理
-try {
-  await operation();
-} catch (error) {
-  const detail = formatError(error);
-  logError(`操作失敗: ${detail.message}`, error);
-  this.metadata.errors.push({
-    page: targetName,
-    error: detail.message,
-    timestamp: getTaipeiISO(),
-    stack: detail.stack,
-  });
-}
+```text
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 ```
 
 ---
 
-## 📋 文件同步規則（Non-Negotiable）
+## ⛔ 明確禁止事項
 
-**所有文件 MUST 與程式碼現況保持一致。**
-
-| 文件 | 路徑 | 更新時機 |
-|------|------|---------|
-| 功能規格 | `docs/spec.md` | 功能新增/刪除/變更 |
-| 使用指南 | `docs/使用指南.md` | 操作流程/指令變更 |
-| README | `README.md` | 專案結構/快速開始變更 |
-| Copilot 準則 | `.github/copilot-instructions.md` | 開發規範變更 |
+- 對一般使用者預設「請自行安裝 Node/npm 再試一次」
+- 把 `npm run ...` / `npx ...` 當成一般使用者文件的主流程
+- 在附加到使用者 Chrome 的情境下，把 `browser.close()` 當成預設清理方式
+- 把含敏感資訊的錄製檔、帳密、token 提交到 repo
+- 交付不完整離線包，卻宣稱可在內網直接使用
+- 讓 `README.md` 膨脹成完整 SOP，或讓 `docs\使用指南.md` 失去白話教學定位
+- 把特定案例的臨時 workaround 寫成整個 repo 的最高層長期規則
 
 ---
 
-## 📝 變更記錄
+## 🔄 版本變更記錄
 
-| 版本 | 日期 | 變更內容 |
+| 版本 | 日期 | 重點 |
 |------|------|------|
-| 1.0.0 | 2026-02-09 | 初始版本：角色定義、SDD 開發法、專案定位、技術架構、第一性原則、commit 規範、禁止事項、最佳實踐 |
+| 1.1.0 | 2026-03-13 | 新增角色分流、Windows 主流程、離線包責任、文件邊界、repo-specific CDP 準則、非技術使用者友善原則、Git 非破壞性同步規則 |
+| 1.0.0 | 2026-02-09 | 初版建立 |
