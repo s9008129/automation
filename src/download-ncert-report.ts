@@ -1,7 +1,7 @@
 /**
  * 🔽 NCERT 資安聯防監控月報 自動下載腳本
  *
- * 連接到使用者已開啟的 Chrome Debug 模式，自動登入 NCERT 網站，
+ * 連接到使用者已開啟的 Chromium branded browser（Chrome / Edge）Debug 模式，自動登入 NCERT 網站，
  * 下載最新的資安聯防監控月報 PDF，續下載 Post/list.do 的 Excel，然後登出。
  *
  * 執行方式：
@@ -10,7 +10,7 @@
  * 必要環境變數：
  *   NCERT_USERNAME — NCERT 帳號
  *   NCERT_PASSWORD — NCERT 密碼
- *   CDP_PORT       — Chrome Debug Protocol 埠號（預設 9222）
+ *   CDP_PORT       — Chromium DevTools Protocol 埠號（預設 9222）
  *
  * 離線運作，不依賴任何外部網路。
  */
@@ -25,7 +25,7 @@ import { safeFileName, validateUrl } from './materialsCollector';
 // 常數 — 整支腳本共用的固定設定值，就像食譜裡預先量好的材料
 // ============================================================
 
-/** Chrome 偵錯模式的預設連接埠，像是大樓的門牌號碼，讓程式知道要敲哪扇門 */
+/** 瀏覽器偵錯模式的預設連接埠，像是大樓的門牌號碼，讓程式知道要敲哪扇門 */
 const DEFAULT_CDP_PORT = 9222;
 
 /** NCERT 網站首頁網址 — 程式會從這裡開始操作 */
@@ -34,7 +34,7 @@ const TARGET_URL = 'https://www.ncert.nat.gov.tw/index.jsp';
 /** 下載完的檔案最終存放資料夾（專案目錄下的 output/） */
 const OUTPUT_DIR = path.join(process.cwd(), 'output');
 
-/** 瀏覽器預設的「下載」資料夾，用來接住 Chrome 自動下載的檔案 */
+/** 瀏覽器預設的「下載」資料夾，用來接住系統瀏覽器自動下載的檔案 */
 const DEFAULT_STABLE_DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
 
 /** PDF 檔案最小合理大小（1 KB），低於此值代表可能是錯誤頁面而非真正的報告 */
@@ -115,6 +115,20 @@ function loadDotEnv(): void {
     }
   });
   log('ℹ️', '.env loaded (' + envPath + ')');
+}
+
+async function readConnectedBrowserLabel(cdpPort: number): Promise<string> {
+  try {
+    const response = await fetch('http://localhost:' + cdpPort + '/json/version');
+    if (!response.ok) return 'Chromium branded browser';
+    const data = await response.json() as { Browser?: string };
+    if (typeof data.Browser === 'string' && data.Browser.trim()) {
+      return data.Browser.trim();
+    }
+  } catch {
+    // ignore version lookup failures; connectOverCDP will surface the real error if endpoint is unavailable
+  }
+  return 'Chromium branded browser';
 }
 
 /**
@@ -353,19 +367,21 @@ async function main(): Promise<void> {
     '下載落地策略：專案輸出=' + OUTPUT_DIR + '；穩定落地=' + stableDownloadDir
     + ' (' + stableDirSource + ')'
   );
-  log('ℹ️', '說明：Chrome 下載列可能顯示暫存位置，請以上述落地路徑為準');
+  log('ℹ️', '說明：瀏覽器下載列可能顯示暫存位置，請以上述落地路徑為準');
 
   let browser: Browser | null = null;
+  let connectedBrowserLabel = 'Chromium branded browser';
 
   try {
-    // 【第 4 步】用「遙控器」連上你已經打開的 Chrome
-    // CDP（Chrome DevTools Protocol）就像一條遙控線，
-    // 讓腳本可以操作你已經登入的 Chrome，而不是重新開一個新的瀏覽器
-    log('🔗', '正在連接 Chrome CDP (http://localhost:' + cdpPort + ') ...');
+    // 【第 4 步】用「遙控器」連上你已經打開的瀏覽器
+    // CDP（Chrome / Edge 共用的 Chromium DevTools Protocol）就像一條遙控線，
+    // 讓腳本可以操作你已經登入的瀏覽器，而不是重新開一個新的瀏覽器
+    log('🔗', '正在連接瀏覽器 CDP (http://localhost:' + cdpPort + ') ...');
     browser = await chromium.connectOverCDP('http://localhost:' + cdpPort);
-    log('✅', 'Chrome CDP 連接成功');
+    connectedBrowserLabel = await readConnectedBrowserLabel(cdpPort);
+    log('✅', connectedBrowserLabel + ' CDP 連接成功');
 
-    // 列出目前 Chrome 裡開了哪些分頁（方便除錯記錄）
+    // 列出目前瀏覽器裡開了哪些分頁（方便除錯記錄）
     const connectedPages = browser.contexts()
       .flatMap((ctx) => ctx.pages())
       .map((p) => p.url())
@@ -1204,9 +1220,9 @@ async function main(): Promise<void> {
     }
     process.exit(1);
   } finally {
-    // 清理：只釋放程式內的 CDP 連線參考，把「遙控器」放下，不主動關閉使用者本來開著的 Chrome
+    // 清理：只釋放程式內的 CDP 連線參考，把「遙控器」放下，不主動關閉使用者本來開著的瀏覽器
     browser = null;
-    log('🧹', '已釋放 CDP 連線參考（Chrome 保持運行）');
+    log('🧹', '已釋放 CDP 連線參考（' + connectedBrowserLabel + ' 保持運行）');
   }
 }
 

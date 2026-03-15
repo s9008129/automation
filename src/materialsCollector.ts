@@ -25,12 +25,14 @@ const DEFAULT_CDP_PORT = 9222;
 const DEFAULT_MATERIALS_DIR = 'materials';
 const TAIPEI_TZ = 'Asia/Taipei';
 
-/** Chrome 內部頁面 URL scheme 前綴 — 必須過濾 */
+/** Chromium branded browser 內部頁面 URL scheme 前綴 — 必須過濾 */
 const INTERNAL_URL_PREFIXES = [
   'chrome://',
   'chrome-extension://',
-  'devtools://',
+  'chrome-untrusted://',
   'edge://',
+  'edge-extension://',
+  'devtools://',
   'about:blank',
   'about:srcdoc',
 ] as const;
@@ -166,7 +168,7 @@ export function safeFileName(name: string): string {
 
 /**
  * 驗證 URL 是否為允許的 scheme（http / https / about）。
- * 明確拒絕 chrome://、chrome-extension://、devtools:// 等內部 scheme。
+ * 明確拒絕 chrome://、edge://、擴充套件頁面、devtools:// 等內部 scheme。
  * @param url - 待驗證的 URL
  * @returns true 若 URL 為合法 scheme
  */
@@ -195,7 +197,7 @@ export function validateUrl(url: string): boolean {
 }
 
 /**
- * 判斷頁面是否為使用者可見頁面（排除 Chrome 內部頁面）
+ * 判斷頁面是否為使用者可見頁面（排除 Chromium branded browser 內部頁面）
  */
 function isUserPage(page: Page): boolean {
   const url = page.url();
@@ -731,7 +733,7 @@ export async function main(options?: Partial<CliOptions>): Promise<ProcessingRes
     try {
       logger.info(`嘗試連接 CDP: http://localhost:${cdpPort}`);
       browser = await chromium.connectOverCDP(`http://localhost:${cdpPort}`);
-      logger.info('CDP 連接成功');
+      logger.info('CDP 連接成功（可附加到 Chromium branded browser）');
 
       const contexts = browser.contexts();
       const allPages = contexts.flatMap(ctx => ctx.pages());
@@ -775,7 +777,7 @@ export async function main(options?: Partial<CliOptions>): Promise<ProcessingRes
         stack: detail.stack,
       });
     } finally {
-      // connectOverCDP: 嘗試斷開 Playwright 連線，但不關閉使用者 Chrome
+      // connectOverCDP: 嘗試斷開 Playwright 連線，但不關閉使用者的 Chrome / Edge
       if (browser) {
         // Do not close external user Chrome; just release the reference to the Playwright Browser.
         browser = null;

@@ -1,6 +1,6 @@
 # 內部網路網頁素材離線蒐集工具
 
-> 一個為內部網路場景設計的離線優先工具：連接已登入的 Chrome，蒐集頁面結構、畫面與操作流程素材，方便後續交給 AI 分析、整理與生成自動化腳本。
+> 一個為內部網路場景設計的離線優先工具：連接已登入的 Chromium 系列瀏覽器（預設 Chrome，也支援 Microsoft Edge），蒐集頁面結構、畫面與操作流程素材，方便後續交給 AI 分析、整理與生成自動化腳本。
 
 這份 `README.md` 的角色是**專案介紹與快速導覽**。
 如果你要的是一步一步照著做的操作手冊，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
@@ -30,7 +30,7 @@
 有網路的準備電腦                           內網使用電腦                         外部 AI 環境
 ┌──────────────────────┐              ┌──────────────────────┐              ┌──────────────────────┐
 │ 1. prepare bundle    │              │ 1. install.ps1       │              │ 1. 讀取蒐集成果        │
-│ 2. 複製整個資料夾     │  ────────▶   │ 2. launch-chrome.ps1 │  ────────▶   │ 2. 分析頁面與流程      │
+│ 2. 複製整個資料夾     │  ────────▶   │ 2. 啟動瀏覽器入口      │  ────────▶   │ 2. 分析頁面與流程      │
 │                      │              │ 3. collect.ps1       │              │ 3. 整理自動化腳本      │
 └──────────────────────┘              └──────────────────────┘              └──────────────────────┘
 ```
@@ -49,12 +49,12 @@
 
 - `runtime\node\`：專案內建執行 runtime
 - `node_modules\`：離線執行所需依賴
-- `.playwright-browsers\`：Playwright 所需瀏覽器元件
-- `install.ps1`、`launch-chrome.ps1`、`collect.ps1`：一般使用者入口
+- `.playwright-browsers\`：Playwright Chromium runtime（離線包必備）
+- `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`：一般使用者入口
 
 ### 內網使用者（拿到完整工具包的人）
 
-內網使用者拿到完整工具包後，只需要在工具包資料夾內依序執行：
+內網使用者拿到完整工具包後，請先走 **標準 Chrome 流程**：
 
 ```powershell
 .\install.ps1
@@ -62,11 +62,20 @@
 .\collect.ps1
 ```
 
+如果現場指定使用 **Microsoft Edge**，改用這組指令：
+
+```powershell
+.\install.ps1
+.\launch-edge.ps1
+.\collect.ps1 --browser edge
+```
+
 其中：
 
 - `install.ps1`：檢查離線工具包是否完整，**不是上網安裝器**
-- `launch-chrome.ps1`：啟動可供工具連接的 Chrome Debug 視窗
-- `collect.ps1`：開始蒐集素材
+- `launch-chrome.ps1`：標準啟動入口，啟動可供工具連接的 Chrome Debug 視窗
+- `launch-edge.ps1`：Edge 替代入口，啟動可供工具連接的 Microsoft Edge Debug 視窗
+- `collect.ps1`：開始蒐集素材；若前一步使用 Edge，請加上 `--browser edge`
 
 ## 核心能力
 
@@ -103,9 +112,15 @@
 ### 我是內網使用者
 
 ```powershell
+# 標準 Chrome 流程
 .\install.ps1
 .\launch-chrome.ps1
 .\collect.ps1
+
+# 若現場指定使用 Edge
+.\install.ps1
+.\launch-edge.ps1
+.\collect.ps1 --browser edge
 ```
 
 ### `collect.ps1` 常見模式
@@ -123,6 +138,7 @@
 - `--auto`：依設定檔自動執行蒐集
 - `--record <name>`：直接進入錄製模式
 - `--config <path>`：指定設定檔執行
+- 若使用 Edge，請改用 `--browser edge`，或在設定檔中把 `"browser"` 設為 `"edge"`
 
 > 更完整的白話 SOP、角色分流與問題排除，請看 [`docs/使用指南.md`](docs/使用指南.md)。
 
@@ -152,11 +168,11 @@ materials\
 
 ## 技術架構 / 技術棧摘要
 
-本專案的核心做法，是透過 **Chrome CDP（Debug Protocol）** 連接到已登入的 Chrome，再由 Playwright 負責蒐集頁面素材。
+本專案的核心做法，是透過 **Chromium branded browser 的 CDP（Debug Protocol）** 連接到已登入的瀏覽器（Chrome / Edge），再由 Playwright 負責蒐集頁面素材。
 
 ### 主要技術
 
-- **Chrome CDP（Debug Protocol）**：連接已登入的瀏覽器工作階段
+- **Chromium CDP（Debug Protocol）**：連接已登入的 Chrome / Edge 工作階段
 - **Playwright ^1.52.0**：負責快照、截圖與錄製能力
 - **TypeScript ^5.7.3**：主要程式語言
 - **Node.js >=20.0.0**：執行環境要求
@@ -167,7 +183,8 @@ materials\
 - **離線優先**：正式使用情境依賴預先打包，不假設可連外網
 - **ARIA-first**：優先蒐集頁面結構，方便 AI 後續分析
 - **任務資料夾隔離**：每次執行獨立保存成果，方便交接與回溯
-- **不強制關閉使用者 Chrome**：降低對使用者既有工作狀態的干擾
+- **不強制關閉使用者瀏覽器**：降低對使用者既有工作狀態的干擾
+- **Edge 視為系統前置需求**：若使用 Edge，要求內網電腦已安裝 Microsoft Edge；離線包不內嵌 branded Edge 本體
 - **內網情境導向**：針對已登入、受限網路與人工配合流程設計
 
 ## 安全與限制
@@ -182,9 +199,10 @@ materials\
 ### 已知限制
 
 - 這是一個**素材蒐集工具**，不是最終腳本生成器
-- 需要先啟動可連接的 Chrome Debug 視窗
+- 需要先啟動可連接的瀏覽器 Debug 視窗（標準流程是 Chrome；若使用 Edge，請改用 `launch-edge.ps1` 並在蒐集時加上 `--browser edge`）
 - 主要目標環境是 **Windows 11 + PowerShell 7.x**
 - 離線使用依賴事先準備好的完整工具包
+- 若要使用 Edge，內網電腦必須已安裝 Microsoft Edge；離線包仍以專案內建 Playwright Chromium runtime 為主
 - 遇到高度動態或特殊權限頁面時，仍可能需要人工補充說明與判讀
 
 ## 文件導覽

@@ -1,5 +1,7 @@
 # Edge 支援可行性研究報告
 
+> **狀態更新（2026-03-15）**：本報告建議的「Chromium branded browser aware」方案已落地到目前 repo。現況為：保留 Chrome 作為標準入口，新增 Edge 對應入口、`--browser edge` 蒐集流程，以及文件 / 離線包責任邊界同步。
+
 ## 結論摘要
 
 結論先講清楚：**本專案技術上可行支援 Microsoft Edge，自動化邏輯可以大致比照既有 Chrome 模式，但不是只把字樣從 Chrome 改成 Edge 就完成。**

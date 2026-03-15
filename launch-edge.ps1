@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    啟動 Chrome Debug 模式（相容舊入口）
+    啟動 Edge Debug 模式（Windows 使用者入口）
 #>
+
 [CmdletBinding()]
 param(
     [int]$Port = 9222
@@ -9,5 +10,5 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $launcher = Join-Path $PSScriptRoot 'scripts\launch-browser.ps1'
-& $launcher -Browser chrome -Port $Port
+& $launcher -Browser edge -Port $Port
 exit $LASTEXITCODE

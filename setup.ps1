@@ -6,7 +6,7 @@
     給一般使用者與技術人員共用的安裝腳本。
     - 一般使用者：拿到完整離線包後，直接執行即可檢查是否可用
     - 技術人員：若目前是在原始專案資料夾，且電腦上有可用的 Node.js / npm，
-      腳本會協助補齊 node_modules 與 Playwright Chromium
+      腳本會協助補齊 node_modules 與專案內建 Playwright 瀏覽器元件（Chromium runtime）
 
 .NOTES
     - 一般使用者建議直接執行 .\install.ps1
@@ -36,6 +36,7 @@ $RequiredEntries = @(
     @{ Name = "install.ps1"; Path = (Join-Path $ProjectRoot "install.ps1") },
     @{ Name = "collect.ps1"; Path = (Join-Path $ProjectRoot "collect.ps1") },
     @{ Name = "launch-chrome.ps1"; Path = (Join-Path $ProjectRoot "launch-chrome.ps1") },
+    @{ Name = "launch-edge.ps1"; Path = (Join-Path $ProjectRoot "launch-edge.ps1") },
     @{ Name = "collect-materials.ts"; Path = (Join-Path $ProjectRoot "collect-materials.ts") },
     @{ Name = "scripts\resolve-node-runtime.ps1"; Path = $ResolveNodeScript }
 )
@@ -211,7 +212,7 @@ function Ensure-RequiredEntries {
     }
 
     if ($missingEntries.Count -eq 0) {
-        Write-Log "INFO" "  ✅ install / collect / launch 等 PowerShell 入口已就緒" -Color Green
+        Write-Log "INFO" "  ✅ install / collect / launch（Chrome / Edge）等 PowerShell 入口已就緒" -Color Green
         return
     }
 
@@ -320,12 +321,12 @@ function Ensure-PlaywrightBrowser {
     )
 
     Write-Log "INFO" ""
-    Write-Log "INFO" "  [3/4] 檢查 Playwright Chromium..." -Color White
+    Write-Log "INFO" "  [3/4] 檢查專案內建 Playwright 瀏覽器元件（Chromium runtime）..." -Color White
 
     $localBrowserReady = Test-PlaywrightBrowserDirectory -Path $Runtime.ProjectBrowserPath
     if ($localBrowserReady) {
         $env:PLAYWRIGHT_BROWSERS_PATH = $Runtime.ProjectBrowserPath
-        Write-Log "INFO" "  ✅ 已內建於 $($Runtime.ProjectBrowserPath)" -Color Green
+        Write-Log "INFO" "  ✅ 已內建 Chromium runtime：$($Runtime.ProjectBrowserPath)" -Color Green
         return $true
     }
 
@@ -345,20 +346,20 @@ function Ensure-PlaywrightBrowser {
     }
 
     if ($Offline) {
-        $message = "這份安裝包不完整：缺少 Playwright Chromium（.playwright-browsers）。"
+        $message = "這份安裝包不完整：缺少專案內建 Playwright Chromium runtime（.playwright-browsers）。即使使用 Edge 模式，離線包仍需包含此目錄。"
         Write-Log "ERROR" "  ❌ $message" -Color Red
         Add-Failure $message
         return $false
     }
 
     if (-not $Runtime.PlaywrightCliExists) {
-        $message = "缺少 Playwright CLI，無法自動安裝 Chromium。"
+        $message = "缺少 Playwright CLI，無法自動安裝專案內建 Chromium runtime。"
         Write-Log "ERROR" "  ❌ $message" -Color Red
         Add-Failure $message
         return $false
     }
 
-    Write-Log "WARN" "  ⚠️  尚未找到 Chromium，將自動安裝到專案內的 .playwright-browsers" -Color Yellow
+    Write-Log "WARN" "  ⚠️  尚未找到專案內建 Chromium runtime，將自動安裝到 .playwright-browsers" -Color Yellow
     New-Item -ItemType Directory -Force -Path $Runtime.ProjectBrowserPath | Out-Null
 
     $exitCode = Invoke-LoggedCommand -FilePath $Runtime.NodeExePath -Arguments @(
@@ -370,14 +371,14 @@ function Ensure-PlaywrightBrowser {
     }
 
     if ($exitCode -ne 0) {
-        $message = "Playwright Chromium 安裝失敗（ExitCode: $exitCode）"
+        $message = "Playwright Chromium runtime 安裝失敗（ExitCode: $exitCode）"
         Write-Log "ERROR" "  ❌ $message" -Color Red
         Add-Failure $message
         return $false
     }
 
     if (-not (Test-PlaywrightBrowserDirectory -Path $Runtime.ProjectBrowserPath)) {
-        $message = "Chromium 安裝後仍找不到 .playwright-browsers 內容。"
+        $message = "Chromium runtime 安裝後仍找不到 .playwright-browsers 內容。"
         Write-Log "ERROR" "  ❌ $message" -Color Red
         Add-Failure $message
         return $false
@@ -432,9 +433,10 @@ function Write-Outcome {
     Write-Log "INFO" "  ========================================" -Color Green
     Write-Log "INFO" ""
     Write-Log "INFO" "  下一步：" -Color Cyan
-    Write-Log "INFO" "  1. 執行 .\launch-chrome.ps1" -Color White
-    Write-Log "INFO" "  2. 在 Chrome 中登入你的內部網站" -Color White
-    Write-Log "INFO" "  3. 回到 PowerShell 執行 .\collect.ps1" -Color White
+    Write-Log "INFO" "  1. 標準流程請執行 .\launch-chrome.ps1" -Color White
+    Write-Log "INFO" "     若現場指定使用 Edge，改執行 .\launch-edge.ps1" -Color White
+    Write-Log "INFO" "  2. 在瀏覽器中登入你的內部網站" -Color White
+    Write-Log "INFO" "  3. 回到 PowerShell 執行 .\collect.ps1（Edge 請加 --browser edge）" -Color White
     Write-Log "INFO" ""
 }
 

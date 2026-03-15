@@ -1,12 +1,12 @@
 # NCERT 月報自動下載腳本 — 變更紀錄
 
-> **文件版本**：1.0.0 ｜ **更新日期**：2026-02-11 ｜ **時區**：Asia/Taipei (UTC+8)
+> **文件版本**：1.1.0 ｜ **更新日期**：2026-03-15 ｜ **時區**：Asia/Taipei (UTC+8)
 
 ---
 
 ## 1. 專案背景與目的
 
-本專案（`web-material-collector`）是一套**內部網路網頁素材離線蒐集工具**，透過 Playwright 連接使用者已開啟的 Chrome（CDP 協定），在不關閉使用者瀏覽器的前提下自動化蒐集 ARIA 快照、截圖與 PDF 文件。本次變更的核心為 `src/download-ncert-report.ts`——一支自動登入 NCERT 網站、定位「資安聯防監控月報」表格第二資料列、下載對應 PDF 並登出的端對端自動化腳本。此腳本完全離線運作，憑證由環境變數（`.env`）提供，檔名經 `safeFileName()` 嚴格淨化以防路徑穿越，並遵循專案的結構化日誌與 CDP 不關閉原則。
+本專案（`web-material-collector`）是一套**內部網路網頁素材離線蒐集工具**，透過 Playwright 連接使用者已開啟的 Chromium branded browser（Chrome / Edge，使用 CDP 協定），在不關閉使用者瀏覽器的前提下自動化蒐集 ARIA 快照、截圖與 PDF 文件。本次變更的核心為 `src/download-ncert-report.ts`——一支自動登入 NCERT 網站、定位「資安聯防監控月報」表格第二資料列、下載對應 PDF 並登出的端對端自動化腳本。此腳本完全離線運作，憑證由環境變數（`.env`）提供，檔名經 `safeFileName()` 嚴格淨化以防路徑穿越，並遵循專案的結構化日誌與 CDP 不關閉原則。
 
 ---
 
@@ -34,15 +34,19 @@ npx tsc --noEmit
 
 預期結果：無輸出（零錯誤）。
 
-### 3.2 啟動 Chrome CDP
+### 3.2 啟動瀏覽器 CDP（Chrome 預設 / Edge 替代）
 
 ```powershell
+# 標準 Chrome 流程
 .\launch-chrome.ps1          # 預設埠 9222
-# 或指定埠號：
 .\launch-chrome.ps1 -Port 9333
+
+# 如果要驗證 Edge
+.\launch-edge.ps1            # 預設埠 9222
+.\launch-edge.ps1 -Port 9333
 ```
 
-確認 Chrome 開啟後，可在瀏覽器中造訪 `http://localhost:9222/json/version` 驗證 CDP 可用。
+確認瀏覽器開啟後，可在瀏覽器中造訪 `http://localhost:9222/json/version` 驗證 CDP 可用。
 
 ### 3.3 設定環境變數並執行
 
@@ -63,7 +67,7 @@ npx tsx src/download-ncert-report.ts
 
 ```
 [2026/02/11 17:00:00] 🚀 NCERT 月報下載腳本啟動
-[...] ✅ Chrome CDP 連接成功
+[...] ✅ <Browser> CDP 連接成功
 [...] ✅ 登入成功
 [...] 📄 找到目標連結: 114年01月資安聯防監控月報.pdf
 [...] ✅ 月報已儲存至: D:\dev\automation\output\114年01月資安聯防監控月報.pdf
@@ -82,7 +86,7 @@ PDF 檔案會存放於 `./output/` 目錄。
 | NCERT 網站 UI 結構變更 | 表格或連結的 DOM 結構變動會導致 locator 失敗 | 腳本已內建 fallback（直接導航 `Post2/list.do`）；失敗時日誌含完整堆疊追蹤 |
 | 第二列定位錯誤 | 表格資料列數不足或排序改變可能取到錯誤的 PDF | 使用 `STRICT_SECOND_ROW` 旗標控制（見下方） |
 | 檔名安全 | 伺服器回傳的檔名可能含路徑穿越字元 | 已使用 `safeFileName()` 做嚴格淨化 |
-| CDP 連線失敗 | Chrome 未以 Debug 模式啟動或埠號不符 | 啟動前先確認 `http://localhost:9222/json/version` 可存取 |
+| CDP 連線失敗 | Chrome / Edge 未以 Debug 模式啟動或埠號不符 | 啟動前先確認 `http://localhost:9222/json/version` 可存取 |
 
 ### `STRICT_SECOND_ROW` 旗標
 

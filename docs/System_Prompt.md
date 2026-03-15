@@ -10,10 +10,11 @@
 - **網路**: 腳本將在內部網路執行，不可依賴任何外部 CDN 或雲端 API
 
 ### 連接方式（Non-Negotiable）
-- **MUST** 使用 `chromium.connectOverCDP('http://localhost:9222')` 連接到使用者已開啟的 Chrome Debug 模式
+- **MUST** 使用 `chromium.connectOverCDP('http://localhost:9222')` 連接到使用者已開啟的 Chromium branded browser（Chrome / Edge）Debug 模式
 - **NEVER** 使用 `chromium.launch()` — 因為目標頁面需要使用者已登入的 session
-- **NEVER** 呼叫 `browser.close()` — 這會關閉使用者正在操作的 Chrome
-- 腳本結束時只需設定 `browser = null` 或直接結束程式，讓 Chrome 保持運行
+- **NEVER** 呼叫 `browser.close()` — 這會關閉使用者正在操作的 Chrome / Edge
+- 若題目或素材明確指定使用 Edge，腳本中的提示與日誌應清楚標示 Microsoft Edge；未指定時可預設以 Chrome 為主
+- 腳本結束時只需設定 `browser = null` 或直接結束程式，讓瀏覽器保持運行
 - CDP_PORT 預設為 9222，但 MUST 支援透過環境變數 `CDP_PORT` 自訂
 
 ### 選擇器策略

@@ -2,7 +2,7 @@
  * 🏗️ 內部網路網頁素材離線蒐集工具 v1.0.0
  *
  * 完全離線運作，不需要任何網際網路連線。
- * 連接到已開啟 CDP Debug 模式的 Chrome，自動蒐集：
+ * 連接到已開啟 CDP Debug 模式的 Chromium branded browser（Chrome / Edge），自動蒐集：
  *   1. ARIA 快照（頁面語意結構 — AI 分析的核心素材）
  *   2. 截圖（視覺參考）
  *   3. Codegen 錄製（互動流程記錄）
@@ -33,9 +33,23 @@ import { fileURLToPath } from 'url';
 // 型別定義
 // ============================================================
 
+type BrowserBrand = 'chrome' | 'edge';
+
+interface BrowserDefinition {
+  displayName: string;
+  playwrightChannel: 'chrome' | 'msedge';
+  windowsExecutable: string;
+  macExecutable: string;
+  linuxExecutable: string;
+  windowsLaunchScript: string;
+  unixLaunchScript: string;
+  profileDirName: string;
+}
+
 interface CollectConfig {
   projectName: string;
   description: string;
+  browser: BrowserBrand;
   cdpPort: number;
   outputDir: string;
   taskName?: string;
@@ -82,6 +96,10 @@ interface MaterialMetadata {
   platform: string;
   nodeVersion: string;
   playwrightVersion: string;
+  browser: BrowserBrand;
+  browserDisplayName: string;
+  browserPlaywrightChannel: string;
+  browserVersion: string;
   logFile: string;
   outputRootDir: string;
   taskFolder: string;
@@ -158,6 +176,38 @@ const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url));
 // 獨立包的設定檔在同一層目錄
 const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'collect-materials-config.json');
 const LOG_DIR = path.join(process.cwd(), 'logs');
+const INTERNAL_URL_PREFIXES = [
+  'chrome://',
+  'chrome-extension://',
+  'chrome-untrusted://',
+  'edge://',
+  'edge-extension://',
+  'devtools://',
+  'about:blank',
+  'about:srcdoc',
+] as const;
+const BROWSER_DEFINITIONS: Record<BrowserBrand, BrowserDefinition> = {
+  chrome: {
+    displayName: 'Chrome',
+    playwrightChannel: 'chrome',
+    windowsExecutable: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    macExecutable: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    linuxExecutable: 'google-chrome',
+    windowsLaunchScript: '.\\launch-chrome.ps1',
+    unixLaunchScript: './scripts/launch-chrome.sh',
+    profileDirName: 'chrome-debug-profile',
+  },
+  edge: {
+    displayName: 'Edge',
+    playwrightChannel: 'msedge',
+    windowsExecutable: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    macExecutable: '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    linuxExecutable: 'microsoft-edge',
+    windowsLaunchScript: '.\\launch-edge.ps1',
+    unixLaunchScript: './scripts/launch-edge.sh',
+    profileDirName: 'edge-debug-profile',
+  },
+};
 
 let logFilePath: string | null = null;
 const logBuffer: string[] = [];
@@ -207,6 +257,37 @@ function getTaipeiTaskTimestamp(): string {
 // ============================================================
 // 工具函數
 // ============================================================
+
+function normalizeBrowserBrand(value: unknown): BrowserBrand {
+  if (typeof value !== 'string') {
+    return 'chrome';
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case 'edge':
+    case 'msedge':
+      return 'edge';
+    default:
+      return 'chrome';
+  }
+}
+
+function detectBrowserBrandFromVersionString(value: string | undefined): BrowserBrand | null {
+  if (!value) {
+    return null;
+  }
+  if (value.includes('Edg/')) {
+    return 'edge';
+  }
+  if (value.includes('Chrome/')) {
+    return 'chrome';
+  }
+  return null;
+}
+
+function getBrowserDefinition(browser: BrowserBrand): BrowserDefinition {
+  return BROWSER_DEFINITIONS[browser];
+}
 
 function loadDotEnv(): void {
   const envPath = path.join(process.cwd(), '.env');
@@ -294,12 +375,13 @@ function printHelp(): void {
     `  ${primaryCommand} --config .\\collect-materials-config.json`,
     '',
     '常用參數：',
-    '  --auto        依設定檔自動蒐集全部素材',
-    '  --snapshot    只擷取目前頁面快照',
-    '  --record NAME 啟動 Playwright Codegen 錄製',
-    '  --config PATH 使用指定設定檔',
-    '  --port N      覆蓋 CDP 連接埠（預設 9222）',
-    '  --help, -h    顯示這份說明',
+    '  --auto              依設定檔自動蒐集全部素材',
+    '  --snapshot          只擷取目前頁面快照',
+    '  --record NAME       啟動 Playwright Codegen 錄製',
+    '  --browser BROWSER   指定瀏覽器（chrome / edge）',
+    '  --config PATH       使用指定設定檔',
+    '  --port N            覆蓋 CDP 連接埠（預設 9222）',
+    '  --help, -h          顯示這份說明',
     '',
   ];
 
@@ -551,6 +633,8 @@ function loadConfig(configPath: string): CollectConfig {
     process.exit(1);
   }
 
+  config.browser = normalizeBrowserBrand(config.browser);
+
   const defaults = {
     ariaSnapshot: true,
     screenshot: true,
@@ -621,6 +705,7 @@ class MaterialCollector {
     this.outputRootDir = path.resolve(config.outputDir);
     this.taskFolderName = buildTaskFolderName(resolveTaskName(config));
     this.outputDir = path.join(this.outputRootDir, this.taskFolderName);
+    const browserDefinition = getBrowserDefinition(config.browser);
     this.metadata = {
       projectName: config.projectName,
       collectedAt: getTaipeiISO(),
@@ -629,6 +714,10 @@ class MaterialCollector {
       platform: `${process.platform}-${process.arch}`,
       nodeVersion: process.version,
       playwrightVersion: getPlaywrightVersion(),
+      browser: config.browser,
+      browserDisplayName: browserDefinition.displayName,
+      browserPlaywrightChannel: browserDefinition.playwrightChannel,
+      browserVersion: 'unknown',
       logFile: getLogFilePath() || '',
       outputRootDir: this.outputRootDir,
       taskFolder: this.taskFolderName,
@@ -645,6 +734,49 @@ class MaterialCollector {
       this.extractUrlsFromRecording('');
       // @ts-ignore
       this.captureSnapshotsForUrls([], '');
+    }
+  }
+
+  private getBrowserDefinition(): BrowserDefinition {
+    return getBrowserDefinition(this.config.browser);
+  }
+
+  private getBrowserDisplayName(): string {
+    return this.getBrowserDefinition().displayName;
+  }
+
+  private syncBrowserMetadata(): void {
+    const definition = this.getBrowserDefinition();
+    this.metadata.browser = this.config.browser;
+    this.metadata.browserDisplayName = definition.displayName;
+    this.metadata.browserPlaywrightChannel = definition.playwrightChannel;
+  }
+
+  private async updateBrowserVersionInfo(endpoint: string): Promise<void> {
+    try {
+      const response = await fetch(`${endpoint}/json/version`);
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json() as { Browser?: string; UserAgent?: string };
+      if (typeof data.Browser === 'string' && data.Browser) {
+        const detectedBrand = detectBrowserBrandFromVersionString(data.Browser);
+        if (detectedBrand && detectedBrand !== this.config.browser) {
+          const previousDisplayName = this.getBrowserDisplayName();
+          this.config.browser = detectedBrand;
+          this.syncBrowserMetadata();
+          log('ℹ️', `CDP 端點實際回報為 ${this.getBrowserDisplayName()}；後續改以 ${this.getBrowserDisplayName()} 模式處理（原設定：${previousDisplayName}）`);
+        } else {
+          this.syncBrowserMetadata();
+        }
+        this.metadata.browserVersion = data.Browser;
+        writeLogContext('browserVersionInfo', data);
+        return;
+      }
+    } catch (error) {
+      const detail = formatError(error);
+      writeLogLine(`[${getTaipeiISO()}][WARN] 無法讀取 CDP /json/version：${detail.message}`);
     }
   }
 
@@ -676,7 +808,7 @@ class MaterialCollector {
       '  歡迎使用互動模式（推薦新手）',
       '  這個模式會用選單帶你完成整個流程，不需要記住技術指令。',
       '  本次工作分成 2 個階段：',
-      '    1. 頁面蒐集：在「已登入的 Chrome」逐頁擷取 ARIA 快照與截圖',
+      '    1. 頁面蒐集：在「已登入的瀏覽器」逐頁擷取 ARIA 快照與截圖',
       '    2. 流程錄製：另外開一個 Playwright 視窗錄下操作流程',
       '',
       '  建議順序：先完成頁面蒐集，再進入錄製階段（ARIA-first）。',
@@ -695,7 +827,7 @@ class MaterialCollector {
         '',
         '  ────────────────────────────────────────────────────────────',
         '  階段 1/2：頁面蒐集（ARIA-first）',
-        '  請先到已登入的 Chrome，把畫面切到你要蒐集的頁面，再回來依選單操作。',
+        `  請先到已登入的 ${this.getBrowserDisplayName()}，把畫面切到你要蒐集的頁面，再回來依選單操作。`,
         '  每蒐集完一頁，你都可以直接切到錄製階段，不需要中斷程式。',
         '  ────────────────────────────────────────────────────────────',
       ]);
@@ -706,7 +838,7 @@ class MaterialCollector {
       '',
       '  ────────────────────────────────────────────────────────────',
       '  階段 2/2：流程錄製',
-      '  這個階段會開啟一個新的 Playwright 錄製視窗，和你原本的 Chrome 分開。',
+      `  這個階段會開啟一個新的 Playwright 錄製視窗，和你原本的 ${this.getBrowserDisplayName()} 分開。`,
       '  請在新視窗完成操作，錄製結束時直接關閉該視窗即可。',
       '  視窗關閉後，請回到這個 PowerShell，依照選單決定下一步。',
     ];
@@ -799,10 +931,10 @@ class MaterialCollector {
       printInteractiveLines([
         '',
         `  目前準備蒐集第 ${pageIndex} 頁`,
-        `    - Chrome 頁面標題：${titleDisplay}`,
-        `    - Chrome 頁面 URL：${currentUrl}`,
+        `    - ${this.getBrowserDisplayName()} 頁面標題：${titleDisplay}`,
+        `    - ${this.getBrowserDisplayName()} 頁面 URL：${currentUrl}`,
         '',
-        '  請先確認 Chrome 現在顯示的就是你要蒐集的頁面，再輸入下面資訊。',
+        `  請先確認 ${this.getBrowserDisplayName()} 現在顯示的就是你要蒐集的頁面，再輸入下面資訊。`,
       ]);
 
       const pageName = await waitForRequiredInput(
@@ -844,8 +976,8 @@ class MaterialCollector {
       printInteractiveLines([
         '',
         '  請先確認以下三件事，再重新嘗試：',
-        '    1. Chrome Debug 視窗仍然開著',
-        '    2. 你目前看到的是內部網站頁面，不是 chrome:// 或擴充套件頁面',
+        `    1. ${this.getBrowserDisplayName()} Debug 視窗仍然開著`,
+        '    2. 你目前看到的是內部網站頁面，不是 chrome://、edge:// 或擴充套件頁面',
         '    3. 頁面已載入完成後，再回到這裡操作',
       ]);
       return null;
@@ -887,16 +1019,20 @@ class MaterialCollector {
     };
   }
 
-  /** 連接到 Chrome CDP */
+  /** 連接到目前選定瀏覽器的 CDP */
   async connect(): Promise<void> {
     const endpoint = `http://localhost:${this.config.cdpPort}`;
-    log('🔌', `正在連接到 Chrome CDP (${endpoint})...`);
+    const browserDefinition = this.getBrowserDefinition();
+    log('🔌', `正在連接到 ${browserDefinition.displayName} CDP (${endpoint})...`);
 
     try {
       this.browser = await chromium.connectOverCDP(endpoint);
-      log('✅', '已成功連接到 Chrome');
+      await this.updateBrowserVersionInfo(endpoint);
+      log('✅', `已成功連接到 ${this.getBrowserDisplayName()}`);
+      if (this.metadata.browserVersion !== 'unknown') {
+        log('🧭', `瀏覽器版本: ${this.metadata.browserVersion}`);
+      }
 
-      // 記錄所有已開啟頁面的詳細資訊（方便 debug）
       const contexts = this.browser.contexts();
       writeLogLine(`[${getTaipeiISO()}][INFO] 瀏覽器上下文數量: ${contexts.length}`);
       for (let ci = 0; ci < contexts.length; ci++) {
@@ -910,46 +1046,41 @@ class MaterialCollector {
         }
       }
     } catch (error) {
-      logError('無法連接到 Chrome Debug 模式', error);
+      const activeBrowser = this.getBrowserDefinition();
+      logError(`無法連接到 ${activeBrowser.displayName} Debug 模式`, error);
       const guidance = [
         '',
-        '   請確認 Chrome 正在以 Debug 模式運行。',
+        `   請確認 ${activeBrowser.displayName} 正在以 Debug 模式運行。`,
         '',
       ];
       if (process.platform === 'win32') {
         guidance.push(
           '   Windows 啟動方法（PowerShell）:',
-          '   請執行專案中的 launch-chrome.ps1：',
-          '   .\\launch-chrome.ps1',
+          `   請執行專案中的 ${activeBrowser.windowsLaunchScript}：`,
+          `   ${activeBrowser.windowsLaunchScript}`,
           '',
           '   或手動啟動：',
-          '   & "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" `',
-          `     --remote-debugging-port=${this.config.cdpPort} \``,
-          '     --user-data-dir=".\\chrome-debug-profile"',
+          `   & "${activeBrowser.windowsExecutable}" --remote-debugging-port=${this.config.cdpPort} --user-data-dir=".\\${activeBrowser.profileDirName}"`,
           ''
         );
       } else if (process.platform === 'darwin') {
         guidance.push(
           '   macOS 啟動方法（Terminal）:',
-          '   請執行專案中的 scripts/launch-chrome.sh：',
-          '   ./scripts/launch-chrome.sh',
+          `   請執行專案中的 ${activeBrowser.unixLaunchScript}：`,
+          `   ${activeBrowser.unixLaunchScript}`,
           '',
           '   或手動啟動：',
-          '   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \\',
-          `     --remote-debugging-port=${this.config.cdpPort} \\`,
-          '     --user-data-dir="./chrome-debug-profile"',
+          `   "${activeBrowser.macExecutable}" --remote-debugging-port=${this.config.cdpPort} --user-data-dir="./${activeBrowser.profileDirName}"`,
           ''
         );
       } else {
         guidance.push(
           '   Linux 啟動方法（Terminal）:',
-          '   請執行專案中的 scripts/launch-chrome.sh：',
-          '   ./scripts/launch-chrome.sh',
+          `   請執行專案中的 ${activeBrowser.unixLaunchScript}：`,
+          `   ${activeBrowser.unixLaunchScript}`,
           '',
           '   或手動啟動：',
-          '   google-chrome \\',
-          `     --remote-debugging-port=${this.config.cdpPort} \\`,
-          '     --user-data-dir="./chrome-debug-profile"',
+          `   ${activeBrowser.linuxExecutable} --remote-debugging-port=${this.config.cdpPort} --user-data-dir="./${activeBrowser.profileDirName}"`,
           ''
         );
       }
@@ -964,10 +1095,8 @@ class MaterialCollector {
   /** 斷開連接（不關閉瀏覽器 — CDP 重要原則） */
   async disconnect(): Promise<void> {
     if (this.browser) {
-      // 重要：使用 CDP connectOverCDP 時，NEVER 呼叫 browser.close()
-      // 只斷開連接，不關閉使用者的 Chrome
       this.browser = null;
-      log('🔌', '已斷開 Chrome 連接（Chrome 保持運行）');
+      log('🔌', `已斷開 ${this.getBrowserDisplayName()} 連接（${this.getBrowserDisplayName()} 保持運行）`);
     }
   }
 
@@ -1026,21 +1155,19 @@ class MaterialCollector {
     }
   }
 
-  /** 判斷是否為使用者可見頁面（排除 Chrome 內部頁面） */
+  /** 判斷是否為使用者可見頁面（排除 Chromium branded browser 內部頁面） */
   private isUserPageByUrl(url: string): boolean {
     if (!url || url === '') return false;
-    if (url.startsWith('chrome://')) return false;
-    if (url.startsWith('chrome-extension://')) return false;
-    if (url.startsWith('chrome-untrusted://')) return false;
-    if (url.startsWith('devtools://')) return false;
-    if (url === 'about:blank') return false;
+    for (const prefix of INTERNAL_URL_PREFIXES) {
+      if (url.startsWith(prefix)) return false;
+    }
     return true;
   }
 
   /** 取得當前活動頁面（優先選擇使用者可見的 http/https 頁面） */
   private async getActivePage(): Promise<Page> {
     if (!this.browser) {
-      throw new Error('尚未連接到 Chrome');
+      throw new Error('尚未連接到瀏覽器');
     }
     const contexts = this.browser.contexts();
     if (contexts.length === 0) {
@@ -1097,7 +1224,7 @@ class MaterialCollector {
     }
 
     // 全部都是內部頁面
-    log('⚠️', `所有 ${allPages.length} 個頁面都是 Chrome 內部頁面，請先在 Chrome 中打開你的目標網站`, 'WARN');
+    log('⚠️', `所有 ${allPages.length} 個頁面都是瀏覽器內部頁面，請先在 ${this.getBrowserDisplayName()} 中打開你的目標網站`, 'WARN');
     return allPages[allPages.length - 1];
   }
 
@@ -1584,7 +1711,7 @@ class MaterialCollector {
     printInteractiveLines([
       '',
       '  現在要開啟一個「獨立的 Playwright 錄製視窗」。',
-      '  重要提醒：這個新視窗不是你目前已登入的 Chrome，登入狀態可能不同。',
+      `  重要提醒：這個新視窗不是你目前已登入的 ${this.getBrowserDisplayName()}，登入狀態可能不同。`,
       '  請在新視窗中做你要錄下的操作；完成後直接關閉該視窗即可結束錄製。',
       '  視窗關閉後，請回到這個 PowerShell，工具會自動帶你進入下一步。',
       `  📋 操作說明：${instructions}`,
@@ -1623,6 +1750,7 @@ class MaterialCollector {
         playwrightCliPath,
         'codegen',
         '--target', 'javascript',
+        '--channel', this.getBrowserDefinition().playwrightChannel,
         '--output', outputFile,
         validatedUrl,
       ];
@@ -1791,7 +1919,7 @@ class MaterialCollector {
           }
 
           const captureChoice = await promptMenuChoice('頁面蒐集階段：接下來要做什麼？', [
-            { key: '1', label: `蒐集目前 Chrome 頁面（第 ${pageIndex} 頁）`, description: '先把 Chrome 切到正確頁面' },
+            { key: '1', label: `蒐集目前 ${this.getBrowserDisplayName()} 頁面（第 ${pageIndex} 頁）`, description: `先把 ${this.getBrowserDisplayName()} 切到正確頁面` },
             { key: '2', label: '切換到錄製階段', description: '改為錄下互動流程' },
             { key: '3', label: '結束並產生報告', description: '本次蒐集先到這裡' },
           ]);
@@ -1821,7 +1949,7 @@ class MaterialCollector {
           lastCapturedPageName = captureResult.pageMeta.name;
 
           const nextAction = await promptMenuChoice('本頁完成，下一步要做什麼？', [
-            { key: '1', label: '繼續蒐集下一個頁面', description: '回到 Chrome 切換到下一頁後再操作' },
+            { key: '1', label: '繼續蒐集下一個頁面', description: `回到 ${this.getBrowserDisplayName()} 切換到下一頁後再操作` },
             { key: '2', label: '進入錄製階段', description: '開始錄下操作流程' },
             { key: '3', label: '結束並產生報告', description: '儲存本次成果' },
           ]);
@@ -2017,6 +2145,7 @@ class MaterialCollector {
 
   private saveMetadata(): void {
     this.metadata.collectedAt = getTaipeiISO();
+    this.syncBrowserMetadata();
     const metaPath = path.join(this.outputDir, 'metadata.json');
     fs.writeFileSync(metaPath, JSON.stringify(this.metadata, null, 2), 'utf-8');
     log('📋', `Metadata 已儲存: ${metaPath}`);
@@ -2031,6 +2160,9 @@ class MaterialCollector {
       `> 專案: ${this.metadata.projectName}`,
       `> 蒐集時間: ${getTaipeiTime()}`,
       `> 工具版本: ${TOOL_VERSION}`,
+      `> 瀏覽器: ${this.metadata.browserDisplayName}`,
+      `> Playwright Channel: ${this.metadata.browserPlaywrightChannel}`,
+      `> 瀏覽器版本: ${this.metadata.browserVersion}`,
       `> 素材根目錄: ${this.metadata.outputRootDir}`,
       `> 任務子資料夾: ${this.metadata.taskFolder}`,
       `> 任務輸出目錄: ${this.metadata.taskOutputDir}`,
@@ -2193,13 +2325,18 @@ async function main(): Promise<void> {
   const cdpPortArg = cdpPortValue
     ? parseInt(cdpPortValue, 10)
     : undefined;
+  const browserArgValue = getArgValue(args, '--browser');
+  const browserArg = browserArgValue
+    ? normalizeBrowserBrand(browserArgValue)
+    : undefined;
 
   if (args.includes('--auto')) {
     // 自動模式：完全依設定檔跑完整批次，適合固定流程
     const config = loadConfig(configPath);
     writeLogContext('mode', { mode: 'auto' });
-    writeLogContext('config', redactConfigForLog(config));
+    if (browserArg) config.browser = browserArg;
     if (cdpPortArg) config.cdpPort = cdpPortArg;
+    writeLogContext('config', redactConfigForLog(config));
     const collector = new MaterialCollector(config);
     activeCollector = collector;
     await collector.collectAll();
@@ -2209,6 +2346,7 @@ async function main(): Promise<void> {
     const config: CollectConfig = {
       projectName: 'quick-snapshot',
       description: '快速快照',
+      browser: browserArg || 'chrome',
       cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
       outputDir: DEFAULT_OUTPUT_DIR,
       taskName: 'quick-snapshot',
@@ -2236,6 +2374,7 @@ async function main(): Promise<void> {
     const config: CollectConfig = {
       projectName: 'codegen-recording',
       description: `錄製: ${recordName}`,
+      browser: browserArg || 'chrome',
       cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
       outputDir: DEFAULT_OUTPUT_DIR,
       taskName: recordName,
@@ -2279,7 +2418,8 @@ async function main(): Promise<void> {
         const config: CollectConfig = {
           projectName,
           description: '互動模式蒐集',
-          cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
+          browser: browserArg || 'chrome',
+      cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
           outputDir: outputRootDir,
           taskName,
           collectOptions: {
@@ -2302,8 +2442,9 @@ async function main(): Promise<void> {
       case '2': {
         const config = loadConfig(configPath);
         writeLogContext('mode', { mode: 'auto' });
-        writeLogContext('config', redactConfigForLog(config));
+        if (browserArg) config.browser = browserArg;
         if (cdpPortArg) config.cdpPort = cdpPortArg;
+        writeLogContext('config', redactConfigForLog(config));
         const collector = new MaterialCollector(config);
         activeCollector = collector;
         await collector.collectAll();
@@ -2313,7 +2454,8 @@ async function main(): Promise<void> {
         const config: CollectConfig = {
           projectName: 'quick-snapshot',
           description: '快速快照',
-          cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
+          browser: browserArg || 'chrome',
+      cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
           outputDir: DEFAULT_OUTPUT_DIR,
           taskName: 'quick-snapshot',
           collectOptions: {
@@ -2339,7 +2481,8 @@ async function main(): Promise<void> {
         const config: CollectConfig = {
           projectName: 'codegen-recording',
           description: `錄製: ${recordName}`,
-          cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
+          browser: browserArg || 'chrome',
+      cdpPort: cdpPortArg || DEFAULT_CDP_PORT,
           outputDir: DEFAULT_OUTPUT_DIR,
           taskName: recordName,
           collectOptions: {
@@ -2376,7 +2519,7 @@ main().catch(error => {
   const detail = formatError(error);
   logError(`未預期的錯誤: ${detail.message}`, error);
   log('💡', '疑難排解：', 'WARN');
-  log('💡', '  1. 確認 Chrome 已以 Debug 模式啟動（Windows: launch-chrome.ps1 / macOS: scripts/launch-chrome.sh）', 'WARN');
+  log('💡', '  1. 確認瀏覽器已以 Debug 模式啟動（Windows: launch-chrome.ps1 / launch-edge.ps1；macOS/Linux: scripts/launch-chrome.sh / scripts/launch-edge.sh）', 'WARN');
   log('💡', '  2. 確認 CDP 端口（預設 9222）沒有被佔用', 'WARN');
   log('💡', '  3. 確認專案已包含 node_modules 與 Playwright 瀏覽器', 'WARN');
   if (process.platform === 'win32') {

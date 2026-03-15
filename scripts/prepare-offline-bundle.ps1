@@ -7,8 +7,8 @@
     這支腳本會把專案整理成一份完整離線包，重點補齊：
     - 專案內建 Node.js runtime（runtime\node）
     - node_modules
-    - 專案本地 .playwright-browsers
-    - install.ps1 / setup.ps1 / launch-chrome.ps1 / collect.ps1 入口
+    - 專案本地 .playwright-browsers（Playwright Chromium runtime）
+    - install.ps1 / setup.ps1 / launch-chrome.ps1 / launch-edge.ps1 / collect.ps1 入口
 
 .NOTES
     - 這支腳本可借用系統 Node.js 來打包
@@ -395,7 +395,7 @@ if (-not (
 Write-Log "INFO" "  ✅ node_modules 已就緒" -Color Green
 
 Write-Log "INFO" ""
-Write-Log "INFO" "  [4/5] 準備專案本地 Playwright Chromium..." -Color White
+Write-Log "INFO" "  [4/5] 準備專案本地 Playwright 瀏覽器元件（Chromium runtime）..." -Color White
 if (-not (Test-PlaywrightBrowserDirectory -Path $BundleBrowserPath)) {
     $browserSourceDir = Resolve-BrowserSourceDirectory -PreferredSource $BrowserSource
     if ($browserSourceDir) {
@@ -406,7 +406,7 @@ if (-not (Test-PlaywrightBrowserDirectory -Path $BundleBrowserPath)) {
 
 if (-not (Test-PlaywrightBrowserDirectory -Path $BundleBrowserPath)) {
     if ($SkipBrowserInstall) {
-        throw "bundle 缺少 Playwright Chromium，且已指定 -SkipBrowserInstall，無法繼續。"
+        throw "bundle 缺少專案內建 Playwright Chromium runtime，且已指定 -SkipBrowserInstall，無法繼續。"
     }
 
     $browserInstallExitCode = Invoke-LoggedCommand -FilePath $BundleNodeExe -WorkingDirectory $BundleRoot -Environment @{
@@ -418,7 +418,7 @@ if (-not (Test-PlaywrightBrowserDirectory -Path $BundleBrowserPath)) {
     )
 
     if ($browserInstallExitCode -ne 0) {
-        throw "Playwright chromium 安裝失敗（ExitCode: $browserInstallExitCode）。"
+        throw "Playwright Chromium runtime 安裝失敗（ExitCode: $browserInstallExitCode）。"
     }
 }
 
@@ -426,7 +426,7 @@ if (-not (Test-PlaywrightBrowserDirectory -Path $BundleBrowserPath)) {
     throw "bundle 仍缺少 .playwright-browsers\chromium-*。"
 }
 
-Write-Log "INFO" ("  ✅ Chromium 已就緒：{0}" -f $BundleBrowserPath) -Color Green
+Write-Log "INFO" ("  ✅ Chromium runtime 已就緒：{0}" -f $BundleBrowserPath) -Color Green
 
 Write-Log "INFO" ""
 Write-Log "INFO" "  [5/5] 驗證離線包..." -Color White

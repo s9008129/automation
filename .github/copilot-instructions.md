@@ -1,7 +1,7 @@
 # 內部網路網頁素材離線蒐集工具 - Copilot 最高準則
 
-> **版本**：1.1.0
-> **更新日期**：2026-03-13
+> **版本**：1.2.0
+> **更新日期**：2026-03-15
 > **適用範圍**：本專案所有 AI 輔助開發（GitHub Copilot、Claude Code 等）
 
 ---
@@ -22,7 +22,7 @@
 
 | 角色 | 所在環境 | 主要任務 | AI 應如何回應 |
 |------|----------|----------|----------------|
-| 一般內網使用者 | 無外網、可能沒有 Node/npm | 啟動工具、登入網站、蒐集素材 | 用白話說明，只引導 `install.ps1 -> launch-chrome.ps1 -> collect.ps1` |
+| 一般內網使用者 | 無外網、可能沒有 Node/npm | 啟動工具、登入網站、蒐集素材 | 用白話說明；標準流程只引導 `install.ps1 -> launch-chrome.ps1 -> collect.ps1`，若現場指定使用 Edge，再補充 `launch-edge.ps1 -> collect.ps1 --browser edge` |
 | 技術準備者 | 可預先整理環境的電腦 | 建立離線包、驗證可攜性、交付內網同仁 | 可以提供 PowerShell、Node、打包與驗證細節 |
 | 專案維護者 | 原始碼倉庫 | 修改程式、文件、打包流程、測試 | 使用完整技術術語與 repo 規範 |
 
@@ -60,7 +60,17 @@
 .\collect.ps1
 ```
 
-這個順序是本專案目前的 **Windows 主流程**，不可任意改寫成要求一般使用者自行操作 npm 或 Node。
+這個順序仍是本專案目前的 **Windows 主流程**，不可任意改寫成要求一般使用者自行操作 npm 或 Node。
+
+若現場指定使用 **Microsoft Edge**，對應流程是：
+
+```powershell
+.\install.ps1
+.\launch-edge.ps1
+.\collect.ps1 --browser edge
+```
+
+這條 Edge 流程是替代入口，不可把它寫成要求一般使用者研究 npm / npx 的技術路徑。
 
 ### 各腳本的定位
 
@@ -68,7 +78,8 @@
 |------|------|------|
 | `install.ps1` | 完整性檢查入口 | 檢查離線包是否齊全，確認可執行，不是對外網下載安裝器 |
 | `launch-chrome.ps1` | Chrome Debug 啟動入口 | 啟動可供 Playwright 附加的使用者 Chrome |
-| `collect.ps1` | 使用者蒐集入口 | 一般使用者真正要執行的蒐集流程 |
+| `launch-edge.ps1` | Edge Debug 啟動入口 | 啟動可供 Playwright 附加的使用者 Microsoft Edge |
+| `collect.ps1` | 使用者蒐集入口 | 一般使用者真正要執行的蒐集流程；若使用 Edge，需加上 `--browser edge` |
 | `setup.ps1` | 底層環境補齊 / 檢查腳本 | 主要給技術準備者或維護者使用，必要時由 `install.ps1` 呼叫 |
 | `scripts\prepare-offline-bundle.ps1` | 離線包打包入口 | 技術準備者唯一正式打包入口 |
 | `npm run ...` / `npx ...` | 次要技術入口 | 僅限技術維護、測試、除錯，不應作為一般使用者主教學 |
@@ -83,8 +94,11 @@
 - `.playwright-browsers\`
 - `install.ps1`
 - `launch-chrome.ps1`
+- `launch-edge.ps1`
 - `collect.ps1`
 - 專案執行所需的腳本與設定檔
+
+若要使用 Edge，還必須確認目標電腦**已安裝 Microsoft Edge**；離線包不內嵌 branded Edge 本體。
 
 **AI 不可把「請先自己安裝 Node/npm」當成一般使用者的標準答案。** 如果一般使用者在內網電腦上遇到這類錯誤，預設應判斷為：**離線包不完整，應回到技術準備者處理。**
 
@@ -117,15 +131,18 @@
 
 ### 1. CDP 連接原則（Non-Negotiable）
 
-- 本專案透過 **Chrome CDP + Playwright `connectOverCDP()`** 附加到使用者已登入的 Chrome。
-- 本 repo 的實務準則是：**附加到使用者 Chrome 後，收尾時以「斷開 Playwright 側參考」為主，不主動關閉使用者的 Chrome。**
+- 本專案透過 **Chromium branded browser 的 CDP + Playwright `connectOverCDP()`** 附加到使用者已登入的 Chrome / Edge。
+- 本 repo 的實務準則是：**附加到使用者瀏覽器後，收尾時以「斷開 Playwright 側參考」為主，不主動關閉使用者的 Chrome / Edge。**
 - 因此在 repo-specific 實作上，預設不要把 `browser.close()` 當成標準清理方式。
 - 必須過濾非使用者內容頁面，例如：
   - `chrome://`
   - `chrome-extension://`
   - `chrome-untrusted://`
+  - `edge://`
+  - `edge-extension://`
   - `devtools://`
   - `about:blank`
+  - `about:srcdoc`
 
 ### 2. 離線優先與完整包原則（Non-Negotiable）
 
@@ -203,7 +220,7 @@ YYYYMMDDhhmmss_錄製名稱
 ### PowerShell / 安裝 / 打包變更時必做
 
 - 使用 `Parser::ParseFile` 驗證 PowerShell 語法。
-- 若改動 `install.ps1`、`setup.ps1`、`launch-chrome.ps1`、`collect.ps1` 或 `scripts\prepare-offline-bundle.ps1`，必須做最少一輪對應 smoke test。
+- 若改動 `install.ps1`、`setup.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`、`scripts\launch-browser.ps1` 或 `scripts\prepare-offline-bundle.ps1`，必須做最少一輪對應 smoke test。
 - 若改動離線包組成，必須驗證 bundle 內的 `install.ps1` 確實能檢查出完整 / 缺件狀態。
 
 ### Repo 常用驗證命令
@@ -257,7 +274,7 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 
 - 對一般使用者預設「請自行安裝 Node/npm 再試一次」
 - 把 `npm run ...` / `npx ...` 當成一般使用者文件的主流程
-- 在附加到使用者 Chrome 的情境下，把 `browser.close()` 當成預設清理方式
+- 在附加到使用者 Chrome / Edge 的情境下，把 `browser.close()` 當成預設清理方式
 - 把含敏感資訊的錄製檔、帳密、token 提交到 repo
 - 交付不完整離線包，卻宣稱可在內網直接使用
 - 讓 `README.md` 膨脹成完整 SOP，或讓 `docs\使用指南.md` 失去白話教學定位
@@ -269,5 +286,6 @@ Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
 
 | 版本 | 日期 | 重點 |
 |------|------|------|
+| 1.2.0 | 2026-03-15 | 升級為 Chromium branded browser aware：保留 Chrome 為標準入口，新增 Edge 對應入口、文件同步與離線包責任邊界 |
 | 1.1.0 | 2026-03-13 | 新增角色分流、Windows 主流程、離線包責任、文件邊界、repo-specific CDP 準則、非技術使用者友善原則、Git 非破壞性同步規則 |
 | 1.0.0 | 2026-02-09 | 初版建立 |

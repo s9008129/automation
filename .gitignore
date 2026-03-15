@@ -2,6 +2,7 @@ node_modules/
 dist/
 materials/
 chrome-debug-profile/
+edge-debug-profile/
 logs/
 .env
 .playwright-browsers/
