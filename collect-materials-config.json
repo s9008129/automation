@@ -1,6 +1,6 @@
 {
   "projectName": "my-intranet-automation",
-  "description": "內部網路網頁自動化素材蒐集設定（請修改為你的實際系統名稱和網址）",
+  "description": "RPA-Cowork 素材蒐集設定（請修改為你的實際系統名稱和網址）",
   "browser": "chrome",
   "cdpPort": 9222,
   "outputDir": "./materials",

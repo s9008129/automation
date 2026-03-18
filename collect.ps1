@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Windows 素材蒐集入口（不依賴 npm / npx）
+    RPA-Cowork 素材蒐集入口（不依賴 npm / npx）
 
 .DESCRIPTION
     優先使用專案內建 Node.js runtime，再退回系統安裝。
@@ -38,7 +38,7 @@ if (-not (Test-Path -Path $CollectorScript -PathType Leaf)) {
 try {
     $runtime = Resolve-NodeRuntime -ProjectRoot $ProjectRoot -MinimumMajorVersion 20 -RequireTsx -RequirePlaywright
 } catch {
-    Write-Host "❌ 無法啟動素材蒐集工具。" -ForegroundColor Red
+    Write-Host "❌ 無法啟動 RPA-Cowork 素材蒐集模組。" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Yellow
     Write-Host ""
     Write-Host "請先執行 .\install.ps1 確認安裝包完整，再重新嘗試。" -ForegroundColor White

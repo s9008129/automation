@@ -23,7 +23,7 @@ last_updated: 2026-03-18
 
 ## 1. 永遠先記住的產品定位
 
-這個專案不是單純的「素材蒐集工具」，而是三段式流程：
+RPA-Cowork 不只是素材蒐集工具，而是三段式流程：
 
 1. **內網蒐集素材**：`install.ps1`、`launch-chrome.ps1` / `launch-edge.ps1`、`collect.ps1`
 2. **與 AI 協作**：把同一次任務的 `materials\` 附件交給 AI

@@ -459,7 +459,7 @@ Write-LogOnly "INFO" "LogFile: $LogFile"
 
 Write-Log "INFO" ""
 Write-Log "INFO" "  ========================================" -Color Cyan
-Write-Log "INFO" "  🔧 素材蒐集工具 - Windows 安裝" -Color Cyan
+Write-Log "INFO" "  🔧 RPA-Cowork - Windows 環境設定" -Color Cyan
 Write-Log "INFO" "  ========================================" -Color Cyan
 Write-Log "INFO" ""
 Write-Log "INFO" "  🧾 安裝日誌: $LogFile" -Color Gray

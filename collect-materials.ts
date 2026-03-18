@@ -1,5 +1,5 @@
 /**
- * 🏗️ 內部網路網頁素材離線蒐集工具 v1.0.0
+ * 🏗️ RPA-Cowork 素材蒐集模組 v1.0.0
  *
  * 完全離線運作，不需要任何網際網路連線。
  * 連接到已開啟 CDP Debug 模式的 Chromium branded browser（Chrome / Edge），自動蒐集：
@@ -2312,7 +2312,7 @@ async function main(): Promise<void> {
 
   console.log('');
   console.log('+==============================================================+');
-  console.log('|  🏗️  內部網路網頁素材離線蒐集工具 v' + TOOL_VERSION + '                      |');
+  console.log('|  🏗️  RPA-Cowork v' + TOOL_VERSION + '                                      |');
   console.log('|  完全離線運作 • 不需要網際網路 • 基於 Playwright            |');
   console.log('+==============================================================+');
   console.log('');

@@ -133,7 +133,7 @@ if command -v curl >/dev/null 2>&1; then
       log INFO "✅ ${DISPLAY_NAME} Debug 模式已成功啟動"
       log INFO "驗證網址: http://localhost:${PORT}/json/version"
       if [[ "$BROWSER" == "edge" ]]; then
-        log INFO "下一步: 啟動蒐集工具時請帶 --browser edge"
+        log INFO "下一步: 啟動 RPA-Cowork 時請帶 --browser edge"
       fi
       exit 0
     fi

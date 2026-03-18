@@ -3,7 +3,7 @@
     啟動 Chromium branded browser 的 Debug 模式（支援 Chrome / Edge）
 
 .DESCRIPTION
-    這個腳本會啟動 Chrome 或 Edge 的 Debug 模式，讓素材蒐集工具可以附加到已登入的瀏覽器。
+    這個腳本會啟動 Chrome 或 Edge 的 Debug 模式，讓 RPA-Cowork 可以附加到已登入的瀏覽器。
     會使用專屬的 user-data-dir，不會直接污染你平常使用的瀏覽器設定。
 
 .EXAMPLE
