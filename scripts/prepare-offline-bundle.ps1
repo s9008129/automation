@@ -281,6 +281,8 @@ $BundleNodeExe = Join-Path $BundleRuntimeDir "node.exe"
 $BundleNodeModules = Join-Path $BundleRoot "node_modules"
 $BundlePlaywrightCli = Join-Path $BundleRoot "node_modules\playwright\cli.js"
 $BundleBrowserPath = Join-Path $BundleRoot ".playwright-browsers"
+$BundleEnvExample = Join-Path $BundleRoot ".env.example"
+$BundleDotEnv = Join-Path $BundleRoot ".env"
 $BundleInstallScript = Join-Path $BundleRoot "install.ps1"
 
 $LogDir = Join-Path $ProjectRoot "logs"
@@ -337,8 +339,26 @@ if ($BundleRoot.StartsWith($ProjectRoot, [System.StringComparison]::OrdinalIgnor
     $excludeDirectories += $BundleRoot
 }
 
-$copyArgs = @("/XD") + $excludeDirectories + @("/XF", "*.log")
+$copyArgs = @("/XD") + $excludeDirectories + @(
+    "/XF",
+    "*.log",
+    ".env",
+    ".env.local",
+    ".env.development",
+    ".env.production",
+    ".env.test"
+)
 Invoke-RobocopyDirectory -Source $ProjectRoot -Destination $BundleRoot -ExtraArgs $copyArgs
+
+if (-not (Test-Path -Path $BundleEnvExample -PathType Leaf)) {
+    throw "bundle 缺少 .env.example，請確認原始專案提供環境變數範例檔。"
+}
+
+if (Test-Path -Path $BundleDotEnv -PathType Leaf) {
+    throw "bundle 不應包含 .env，請先移除實際憑證後重新打包。"
+}
+
+Write-Log "INFO" "  ✅ 已包含 .env.example，且未帶入 .env" -Color Green
 
 Write-Log "INFO" ""
 Write-Log "INFO" "  [2/5] 補齊專案內建 Node.js runtime..." -Color White

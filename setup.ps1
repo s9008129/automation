@@ -38,6 +38,7 @@ $RequiredEntries = @(
     @{ Name = "launch-chrome.ps1"; Path = (Join-Path $ProjectRoot "launch-chrome.ps1") },
     @{ Name = "launch-edge.ps1"; Path = (Join-Path $ProjectRoot "launch-edge.ps1") },
     @{ Name = "collect-materials.ts"; Path = (Join-Path $ProjectRoot "collect-materials.ts") },
+    @{ Name = ".env.example"; Path = (Join-Path $ProjectRoot ".env.example") },
     @{ Name = "scripts\resolve-node-runtime.ps1"; Path = $ResolveNodeScript }
 )
 
@@ -212,7 +213,7 @@ function Ensure-RequiredEntries {
     }
 
     if ($missingEntries.Count -eq 0) {
-        Write-Log "INFO" "  ✅ install / collect / launch（Chrome / Edge）等 PowerShell 入口已就緒" -Color Green
+        Write-Log "INFO" "  ✅ install / collect / launch（Chrome / Edge）與 .env.example 已就緒" -Color Green
         return
     }
 

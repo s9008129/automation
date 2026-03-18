@@ -92,11 +92,14 @@
 - `runtime\node\`（或等效可攜式 Node.js Runtime）
 - `node_modules\`
 - `.playwright-browsers\`
+- `.env.example`
 - `install.ps1`
 - `launch-chrome.ps1`
 - `launch-edge.ps1`
 - `collect.ps1`
 - 專案執行所需的腳本與設定檔
+
+打包時必須保留 `.env.example`，但不得把已填過值的 `.env` 一起交付。
 
 若要使用 Edge，還必須確認目標電腦**已安裝 Microsoft Edge**；離線包不內嵌 branded Edge 本體。
 

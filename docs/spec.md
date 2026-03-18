@@ -161,21 +161,21 @@
 | 檔名 | .env（位於專案根目錄） |
 | 載入機制 | loadDotEnv() 函式在程式啟動時讀取，僅在 process.env 中不存在該 key 時才設定（不覆蓋已存在的環境變數） |
 | 版本控制 | .env 已在 .gitignore 中，**MUST NOT** 被提交到 Git |
-| 範例檔 | 建議提供 .env.example（見下方） |
+| 範例檔 | MUST 提供 `.env.example`，且離線包 MUST 包含此檔；打包時 MUST 排除實際 `.env`（見下方） |
 
 #### .env.example 範例
 
 ```dotenv
-# 內部網路網頁素材蒐集工具 — 環境變數範例
-# 複製此檔案為 .env 並填入實際值
-# ⚠️ .env 檔案不可提交到 Git（已在 .gitignore 中排除）
+# 內部網路網頁素材蒐集工具 — .env 範例
+# 請把這個檔案複製成 .env，再只修改你需要的欄位
+# ⚠️ .env 只供本機使用，不可提交到 Git，也不應被打包進離線工具包
 
-# 錄製檔中密碼欄位的替換值（sanitizeRecording 使用）
-RECORDING_PASSWORD=
+# 錄製檔中的密碼欄位會改用這個值
+RECORDING_PASSWORD=你的實際憑證密碼
 
-# 自動化腳本憑證（若需要）
-NCERT_USERNAME=
-NCERT_PASSWORD=
+# 如果錄製檔或自動化腳本需要帳號，再取消註解並填入實際值
+# NCERT_USERNAME=你的帳號
+# NCERT_PASSWORD=你的實際密碼
 ```
 
 
@@ -217,7 +217,7 @@ equestShutdown() 設定 isShuttingDown = true
 - **FR-020**: `setup.ps1` MUST 作為 Windows 實際安裝 / 檢查入口，優先使用專案內建 runtime，必要時才退回系統 Node.js
 - **FR-021**: `install.ps1` MUST 作為 Windows 一般使用者最簡單的安裝入口，並轉呼叫 `setup.ps1`
 - **FR-022**: `collect.ps1` MUST 作為 Windows 一般使用者主入口，不要求一般使用者手動輸入 npm 指令
-- **FR-023**: `scripts\prepare-offline-bundle.ps1` MUST 供技術人員準備完整離線包，包含專案內建 runtime、node_modules 與 Playwright Chromium runtime
+- **FR-023**: `scripts\prepare-offline-bundle.ps1` MUST 供技術人員準備完整離線包，包含專案內建 runtime、node_modules、Playwright Chromium runtime 與 `.env.example`，且 MUST 排除實際 `.env`
 - **FR-042**: 技術人員為 Windows 內網使用者準備離線環境時，MUST 先補齊 `node_modules` 與專案內建 Playwright Chromium runtime，並建議使用 `scripts\prepare-offline-bundle.ps1` 產出完整離線包
 - **FR-047**: `launch-edge.ps1` MUST 偵測端口佔用並區分 debug Edge 與一般 Edge
 - **FR-049**: Windows 一般使用者的標準流程仍為 `install.ps1 -> launch-chrome.ps1 -> collect.ps1`；若指定使用 Edge，MUST 提供 `launch-edge.ps1` 與 `collect.ps1 --browser edge` 的對應流程

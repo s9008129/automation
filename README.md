@@ -51,7 +51,10 @@
 - `runtime\node\`：專案內建執行 runtime
 - `node_modules\`：離線執行所需依賴
 - `.playwright-browsers\`：Playwright Chromium runtime（離線包必備）
+- `.env.example`：環境變數範例檔（需要時複製成 `.env` 再填值）
 - `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`：一般使用者入口
+
+打包時應 **保留 `.env.example`，但不得把已填過值的 `.env` 一起帶進離線包**。如果內網電腦跳出 `node` / `npm` / `npx` 找不到，優先視為工具包不完整，不要在現場手動補 PATH。
 
 ### 內網使用者（拿到完整工具包的人）
 
