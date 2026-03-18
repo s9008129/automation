@@ -1,6 +1,6 @@
-# 內部網路網頁素材離線蒐集工具
+# RPA-Cowork：內部網路自動化協作工具
 
-> 一個為內部網路場景設計的離線優先工具：連接已登入的 Chromium 系列瀏覽器（預設 Chrome，也支援 Microsoft Edge），蒐集頁面結構、畫面與操作流程素材，方便後續交給 AI 分析、整理與生成自動化腳本。
+> 離線優先的 RPA 工作流平台：在內網蒐集頁面素材、與 AI 協作生成自動化腳本、再透過統一入口執行任務。讓非技術人員也能打造自己的自動化腳本。
 
 這份 `README.md` 的角色是**專案介紹與快速導覽**。
 如果你要的是一步一步照著做的操作手冊，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
@@ -16,27 +16,37 @@
 - 外部環境有 AI、分析工具與整理能力
 - 但兩邊通常不能直接互通
 
-這個專案的任務，就是把「內網裡的人實際看到的頁面與操作線索」整理成一份可攜帶的素材包，形成這條工作鏈：
+這個專案提供一套完整的 RPA 工作流，形成這條工作鏈：
 
-1. 在內網蒐集頁面素材
-2. 把素材帶到外部環境分析
-3. 讓 AI 協助整理成自動化腳本
-4. 再把腳本帶回內網驗證與執行
+1. **蒐集素材**：在內網蒐集頁面結構、截圖與操作流程
+2. **AI 協作**：把素材帶到外部環境，讓 AI 生成自動化腳本
+3. **執行任務**：把腳本帶回內網，一鍵執行自動化任務
 
-> 它的重點是**蒐集高品質素材**，不是直接取代後續的腳本設計與驗證工作。
+> 從「素材蒐集工具」升級為**完整的離線優先 RPA 工作流平台**。
 
-## 專案如何運作
+## 三層架構
+
+```
+[Layer 1] 素材蒐集          [Layer 2] AI 協作            [Layer 3] 任務執行
+─────────────────          ─────────────────            ─────────────────
+launch-chrome.ps1    →     Claude / ChatGPT       →     run-task.ps1
+collect.ps1                分析 ARIA 快照                src\任務名稱.ts
+ARIA 快照、截圖、錄製         生成 .ts 腳本
+```
+
+## 完整工作流
 
 ```text
 有網路的準備電腦                           內網使用電腦                         外部 AI 環境
 ┌──────────────────────┐              ┌──────────────────────┐              ┌──────────────────────┐
-│ 1. prepare bundle    │              │ 1. install.ps1       │              │ 1. 讀取蒐集成果        │
-│ 2. 複製整個資料夾     │  ────────▶   │ 2. 啟動瀏覽器入口      │  ────────▶   │ 2. 分析頁面與流程      │
-│                      │              │ 3. collect.ps1       │              │ 3. 整理自動化腳本      │
-└──────────────────────┘              └──────────────────────┘              └──────────────────────┘
+│ prepare-offline-     │              │ 1. install.ps1       │              │ 1. 讀取 ARIA 快照      │
+│   bundle.ps1         │  ────────▶   │ 2. 啟動瀏覽器入口      │  ────────▶   │ 2. AI 分析頁面結構      │
+│ 打包完整工具包         │              │ 3. collect.ps1       │              │ 3. 生成任務腳本         │
+└──────────────────────┘              │ 4. run-task.ps1      │  ◀────────   │                      │
+                                      └──────────────────────┘              └──────────────────────┘
 ```
 
-整體可分成兩個主要角色：
+## 角色分工
 
 ### 準備者（有網路的電腦）
 
@@ -52,39 +62,42 @@
 - `node_modules\`：離線執行所需依賴
 - `.playwright-browsers\`：Playwright Chromium runtime（離線包必備）
 - `.env.example`：環境變數範例檔（需要時複製成 `.env` 再填值）
-- `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`：一般使用者入口
+- `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`、`run-task.ps1`：使用者入口
 
 打包時應 **保留 `.env.example`，但不得把已填過值的 `.env` 一起帶進離線包**。如果內網電腦跳出 `node` / `npm` / `npx` 找不到，優先視為工具包不完整，不要在現場手動補 PATH。
 
 ### 內網使用者（拿到完整工具包的人）
 
-內網使用者拿到完整工具包後，請先走 **標準 Chrome 流程**：
+**步驟一：蒐集素材**
 
 ```powershell
 .\install.ps1
-.\launch-chrome.ps1
-.\collect.ps1
+.\launch-chrome.ps1        # 或 .\launch-edge.ps1
+.\collect.ps1              # 或 .\collect.ps1 --browser edge
 ```
 
-如果現場指定使用 **Microsoft Edge**，改用這組指令：
+**步驟二：與 AI 協作**（帶出到有 AI 的環境）
+
+把 `materials\` 下的 ARIA 快照、截圖和錄製腳本提供給 AI，請 AI 生成任務腳本。
+
+**步驟三：執行任務腳本**
 
 ```powershell
-.\install.ps1
-.\launch-edge.ps1
-.\collect.ps1 --browser edge
+.\run-task.ps1 src\你的腳本.ts
 ```
 
 其中：
 
 - `install.ps1`：檢查離線工具包是否完整，**不是上網安裝器**
-- `launch-chrome.ps1`：標準啟動入口，啟動可供工具連接的 Chrome Debug 視窗
-- `launch-edge.ps1`：Edge 替代入口，啟動可供工具連接的 Microsoft Edge Debug 視窗
-- `collect.ps1`：開始蒐集素材；若前一步使用 Edge，請加上 `--browser edge`
+- `launch-chrome.ps1`：啟動可供工具連接的 Chrome Debug 視窗
+- `launch-edge.ps1`：Edge 替代入口
+- `collect.ps1`：開始蒐集素材
+- `run-task.ps1`：通用任務執行入口，執行 `src\` 下的任何 `.ts` 腳本
 
 ## 核心能力
 
-### 1. ARIA 快照蒐集
-把頁面的語意結構存下來，讓 AI 更容易理解按鈕、欄位、表格與互動元素。這是本專案最重要的核心素材之一。
+### 1. ARIA 快照蒐集（AI 分析首選）
+把頁面的語意結構存下來，讓 AI 更容易理解按鈕、欄位、表格與互動元素。這是本專案最重要的素材之一。
 
 ### 2. 截圖蒐集
 把頁面當下畫面保存成圖片，方便後續比對版面、狀態與操作前後差異。
@@ -92,18 +105,19 @@
 ### 3. Codegen 錄製
 錄下使用者實際的操作過程，幫助後續重建流程或整理成 Playwright 腳本。
 
-### 4. 可選 HTML 原始碼輸出
-在需要時保留 HTML 原始碼，補足畫面與語意結構之外的上下文資訊。
+### 4. AI 協作腳本生成
+透過標準化的材料包（ARIA 快照 + 錄製腳本 + 截圖），讓任何 AI 都能理解你的系統並生成任務腳本。
 
-### 5. 敏感資訊保護
+### 5. 通用任務執行入口
+`run-task.ps1` 是統一的任務執行入口，可執行 `src\` 下任何 AI 生成或人工撰寫的任務腳本。
+
+### 6. 共用基礎模組（src/lib/）
+任務腳本開發的基礎設施，包含 env 載入、台北時區日誌、瀏覽器輔助等，確保 AI 生成腳本的一致風格。
+
+### 7. 敏感資訊保護
 錄製檔會經過清理流程，避免把密碼欄位等敏感資訊直接寫入產出檔案或版本庫。
 
-### 6. 摘要報告與問題紀錄
-每次任務都會留下 `metadata.json`、`summary-report.md` 與日誌，方便交接、除錯與追蹤。
-
 ## 快速開始
-
-如果你只想先知道最短路徑，可以直接看這裡。
 
 ### 我是準備者
 
@@ -113,7 +127,7 @@
 
 打包完成後，請把**整個產出的資料夾**交給內網使用者，不要只交幾個腳本檔。
 
-### 我是內網使用者
+### 我是內網使用者（蒐集素材）
 
 ```powershell
 # 標準 Chrome 流程
@@ -127,6 +141,12 @@
 .\collect.ps1 --browser edge
 ```
 
+### 我要執行自動化任務
+
+```powershell
+.\run-task.ps1 src\你的腳本.ts
+```
+
 ### `collect.ps1` 常見模式
 
 ```powershell
@@ -137,14 +157,16 @@
 .\collect.ps1 --config .\collect-materials-config.json
 ```
 
-- `.\collect.ps1`：互動模式，適合大多數使用情境
-- `--snapshot`：快速擷取目前頁面
-- `--auto`：依設定檔自動執行蒐集
-- `--record <name>`：直接進入錄製模式
-- `--config <path>`：指定設定檔執行
-- 若使用 Edge，請改用 `--browser edge`，或在設定檔中把 `"browser"` 設為 `"edge"`
+## 任務腳本放置位置
 
-> 更完整的白話 SOP、角色分流與問題排除，請看 [`docs/使用指南.md`](docs/使用指南.md)。
+AI 生成或人工撰寫的任務腳本，統一放在 `src\` 目錄：
+
+```
+src\
+├─ qiz-批次簽核.ts         ← QIZ 電子表單批次簽核
+├─ eip-公文簽核.ts         ← EIP 財稅平台公文簽核
+└─ vst-資料匯出.ts         ← VST 系統資料匯出
+```
 
 ## 產出內容 / 結果結構
 
@@ -153,32 +175,21 @@
 ```text
 materials\
 └─ YYYYMMDDhhmmss_任務名稱\
-   ├─ aria-snapshots\
+   ├─ aria-snapshots\      ← 🔑 AI 分析首選素材
    ├─ screenshots\
    ├─ recordings\
    ├─ metadata.json
    └─ summary-report.md
 ```
 
-常見內容用途如下：
-
-- `aria-snapshots\`：頁面語意結構快照
-- `screenshots\`：畫面截圖
-- `recordings\`：互動錄製檔
-- `metadata.json`：本次任務的結構化紀錄
-- `summary-report.md`：本次任務的摘要整理
-
-如果執行中發生問題，通常也可以到 `logs\` 查看對應日誌。
-
 ## 技術架構 / 技術棧摘要
-
-本專案的核心做法，是透過 **Chromium branded browser 的 CDP（Debug Protocol）** 連接到已登入的瀏覽器（Chrome / Edge），再由 Playwright 負責蒐集頁面素材。
 
 ### 主要技術
 
 - **Chromium CDP（Debug Protocol）**：連接已登入的 Chrome / Edge 工作階段
-- **Playwright ^1.52.0**：負責快照、截圖與錄製能力
-- **TypeScript ^5.7.3**：主要程式語言
+- **Playwright ^1.52.0**：負責快照、截圖、錄製與任務執行
+- **TypeScript ^5.7.3**：主要程式語言（ESM 模組）
+- **tsx ^4.19.0**：TypeScript 執行器（不需要 tsconfig）
 - **Node.js >=20.0.0**：執行環境要求
 - **PowerShell 7.x**：Windows 主要操作入口
 
@@ -186,9 +197,9 @@ materials\
 
 - **離線優先**：正式使用情境依賴預先打包，不假設可連外網
 - **ARIA-first**：優先蒐集頁面結構，方便 AI 後續分析
+- **共用基礎模組**：`src/lib/` 提供一致的 env、logger、browser helper
 - **任務資料夾隔離**：每次執行獨立保存成果，方便交接與回溯
 - **不強制關閉使用者瀏覽器**：降低對使用者既有工作狀態的干擾
-- **Edge 視為系統前置需求**：若使用 Edge，要求內網電腦已安裝 Microsoft Edge；離線包不內嵌 branded Edge 本體
 - **內網情境導向**：針對已登入、受限網路與人工配合流程設計
 
 ## 安全與限制
@@ -202,8 +213,7 @@ materials\
 
 ### 已知限制
 
-- 這是一個**素材蒐集工具**，不是最終腳本生成器
-- 需要先啟動可連接的瀏覽器 Debug 視窗（標準流程是 Chrome；若使用 Edge，請改用 `launch-edge.ps1` 並在蒐集時加上 `--browser edge`）
+- 需要先啟動可連接的瀏覽器 Debug 視窗（標準流程是 Chrome；若使用 Edge，請改用 `launch-edge.ps1`）
 - 主要目標環境是 **Windows 11 + PowerShell 7.x**
 - 離線使用依賴事先準備好的完整工具包
 - 若要使用 Edge，內網電腦必須已安裝 Microsoft Edge；離線包仍以專案內建 Playwright Chromium runtime 為主
@@ -211,14 +221,16 @@ materials\
 
 ## 文件導覽
 
-### `README.md`
-適合第一次認識這個專案的人。重點是回答：這是什麼工具、它解決什麼問題、整體怎麼運作、下一步該看哪份文件。
-
-### [`docs/使用指南.md`](docs/使用指南.md)
-給實際操作的人使用，內容偏向白話 SOP、角色分流、步驟說明與問題排除。
-
-### [`docs/spec.md`](docs/spec.md)
-給維護者、開發者或需要追蹤功能邊界的人，內容偏向功能規格、設計原則與技術決策。
+| 文件 | 角色 | 適合對象 |
+|------|------|---------|
+| `README.md` | 專案介紹與快速導覽 | 第一次認識此專案的人 |
+| [`docs/使用指南.md`](docs/使用指南.md) | 白話 SOP、角色分流 | 內網操作使用者 |
+| [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md) | Edge 版白話 SOP | 使用 Edge 的使用者 |
+| [`docs/AI協作工作流.md`](docs/AI協作工作流.md) | AI 協作完整說明 | 想用 AI 生成腳本的人 |
+| [`docs/任務腳本開發規範.md`](docs/任務腳本開發規範.md) | 腳本開發規範 | 開發者、AI 生成腳本時的參考 |
+| [`docs/執行任務指南.md`](docs/執行任務指南.md) | 任務執行說明 | 執行自動化任務的使用者 |
+| [`docs/常見問題.md`](docs/常見問題.md) | FAQ | 遇到問題時 |
+| [`docs/spec.md`](docs/spec.md) | 功能規格與設計 | 維護者、開發者 |
 
 ## 授權與使用
 
