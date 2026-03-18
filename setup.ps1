@@ -35,6 +35,7 @@ $LocalBrowserPath = Join-Path $ProjectRoot ".playwright-browsers"
 $RequiredEntries = @(
     @{ Name = "install.ps1"; Path = (Join-Path $ProjectRoot "install.ps1") },
     @{ Name = "collect.ps1"; Path = (Join-Path $ProjectRoot "collect.ps1") },
+    @{ Name = "run-task.ps1"; Path = (Join-Path $ProjectRoot "run-task.ps1") },
     @{ Name = "launch-chrome.ps1"; Path = (Join-Path $ProjectRoot "launch-chrome.ps1") },
     @{ Name = "launch-edge.ps1"; Path = (Join-Path $ProjectRoot "launch-edge.ps1") },
     @{ Name = "collect-materials.ts"; Path = (Join-Path $ProjectRoot "collect-materials.ts") },
@@ -438,6 +439,7 @@ function Write-Outcome {
     Write-Log "INFO" "     若現場指定使用 Edge，改執行 .\launch-edge.ps1" -Color White
     Write-Log "INFO" "  2. 在瀏覽器中登入你的內部網站" -Color White
     Write-Log "INFO" "  3. 回到 PowerShell 執行 .\collect.ps1（Edge 請加 --browser edge）" -Color White
+    Write-Log "INFO" "  4. 蒐集完素材、AI 生成腳本後，執行 .\run-task.ps1 src\腳本名稱.ts" -Color White
     Write-Log "INFO" ""
 }
 
