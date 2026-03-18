@@ -3,9 +3,7 @@
 > 離線優先的 RPA 工作流平台：在內網蒐集頁面素材、與 AI 協作生成自動化腳本、再透過統一入口執行任務。讓非技術人員也能打造自己的自動化腳本。
 
 這份 `README.md` 的角色是**專案介紹與快速導覽**。
-如果你要的是一步一步照著做的操作手冊，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
-若你們單位固定使用 **Microsoft Edge**，可直接看獨立的 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
-一般使用者真正要貼給 AI 的生成 / 除錯 Prompt，也已統一收斂到 `docs/使用指南-Edge.md`。
+如果你要的是一步一步照著做的操作手冊、AI 協作方式、任務執行步驟與常見問題，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
 
 ## 這個專案解決什麼問題
 
@@ -73,13 +71,13 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 
 ```powershell
 .\install.ps1
-.\launch-chrome.ps1        # 或 .\launch-edge.ps1
-.\collect.ps1              # 或 .\collect.ps1 --browser edge
+.\launch-edge.ps1
+.\collect.ps1 --browser edge
 ```
 
 **步驟二：與 AI 協作**（帶出到有 AI 的環境）
 
-把 `materials\` 下同一次任務的 ARIA 快照、截圖、錄製腳本，再加上用 `new-task.ps1` 建好的 `src\任務骨架.ts` 提供給 AI。一般使用者實際要貼給 AI 的生成 / 除錯 Prompt，統一看 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
+把 `materials\` 下同一次任務的 ARIA 快照、截圖、錄製腳本，再加上用 `new-task.ps1` 建好的 `src\任務骨架.ts` 提供給 AI。一般使用者實際要貼給 AI 的生成 / 除錯 Prompt，統一看 [`docs/使用指南.md`](docs/使用指南.md)。
 
 **步驟三：執行任務腳本**
 
@@ -131,15 +129,15 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 ### 我是內網使用者（蒐集素材）
 
 ```powershell
-# 標準 Chrome 流程
-.\install.ps1
-.\launch-chrome.ps1
-.\collect.ps1
-
-# 若現場指定使用 Edge
+# 標準 Edge 流程
 .\install.ps1
 .\launch-edge.ps1
 .\collect.ps1 --browser edge
+
+# 若現場仍指定 Chrome
+.\install.ps1
+.\launch-chrome.ps1
+.\collect.ps1
 ```
 
 ### 我要請 AI 幫我建立任務腳本
@@ -149,7 +147,7 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 ```
 
 先建立 `src\` 任務骨架，再把同一次 `materials\` 任務資料夾和骨架腳本交給 AI。
-Prompt 單一來源請看 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
+Prompt 單一來源請看 [`docs/使用指南.md`](docs/使用指南.md)。
 AI 回傳後，直接覆蓋同一個 `src\腳本名稱.ts`，再用 `run-task.ps1` 執行。
 
 ### 我要執行自動化任務
@@ -235,12 +233,7 @@ materials\
 | 文件 | 角色 | 適合對象 |
 |------|------|---------|
 | `README.md` | 專案介紹與快速導覽 | 第一次認識此專案的人 |
-| [`docs/使用指南.md`](docs/使用指南.md) | 白話 SOP、角色分流 | 內網操作使用者 |
-| [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md) | Edge 版白話 SOP + 生成 / 除錯 Prompt 單一來源 | 使用 Edge 的使用者、要跟 AI 協作的人 |
-| [`docs/AI協作工作流.md`](docs/AI協作工作流.md) | AI 協作材料整理摘要 | 想快速理解附件怎麼整理的人 |
-| [`docs/任務腳本開發規範.md`](docs/任務腳本開發規範.md) | 腳本開發規範 | 開發者、AI 生成腳本時的參考 |
-| [`docs/執行任務指南.md`](docs/執行任務指南.md) | 任務執行說明 | 執行自動化任務的使用者 |
-| [`docs/常見問題.md`](docs/常見問題.md) | FAQ | 遇到問題時 |
+| [`docs/使用指南.md`](docs/使用指南.md) | 一般使用者唯一正式指南（SOP、AI 協作、任務執行、FAQ） | 內網操作使用者、要跟 AI 協作的人 |
 | [`docs/spec.md`](docs/spec.md) | 功能規格與設計 | 維護者、開發者 |
 
 ## 授權與使用

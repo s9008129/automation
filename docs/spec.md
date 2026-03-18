@@ -2,8 +2,8 @@
 
 **專案名稱**: RPA-Cowork（npm package id: web-material-collector）
 **建立日期**: 2026-02-09
-**最後更新**: 2026-03-18（v1.6.0 — 對齊 RPA-Cowork 任務框架、Edge 協作主線與 Prompt 單一來源）
-**狀態**: v1.6.0 — 規格已更新（核心功能現況：ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 離線包流程 ✅ run-task / new-task ✅ src/lib 共用框架 ✅ Edge 協作 Prompt 單一來源 ✅）
+**最後更新**: 2026-03-18（v1.7.0 — 整併單一使用指南並改用附件導向 Prompt）
+**狀態**: v1.7.0 — 規格已更新（核心功能現況：ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 離線包流程 ✅ run-task / new-task ✅ src/lib 共用框架 ✅ 單一使用指南 ✅ 附件導向 Prompt ✅）
 **環境**: Windows 11 + PowerShell 7.x +（完整離線包或 Node.js v20+）+ Playwright ^1.52.0 + TypeScript ^5.7.3
 
 > **專案定位**：RPA-Cowork 是一個「離線優先的內部網路自動化協作流程」——先在內網蒐集素材，再把同一次任務材料交給 AI，最後將 AI 生成 / 修正版任務腳本整合回本專案的 `src\` / `run-task.ps1` / `src/lib\` 框架中執行。
@@ -56,7 +56,7 @@
 | 🎬 Codegen 錄製 | 錄製使用者互動流程 | Playwright Codegen |
 | 📄 HTML 原始碼 | 擷取頁面 HTML（可選） | Playwright Content API |
 | 🤖 任務腳本框架 | AI 生成或人工撰寫的任務腳本統一放在 `src\`，透過 `run-task.ps1` 執行 | `new-task.ps1` / `run-task.ps1` / `src/lib/` |
-| 🧭 AI 協作 Prompt | 一般使用者用單一 Prompt 與 AI 生成 / 除錯腳本 | `docs/使用指南-Edge.md` |
+| 🧭 AI 協作 Prompt | 一般使用者用單一 Prompt 與 AI 生成 / 除錯腳本 | `docs/使用指南.md` |
 
 ### 1.3 技術棧
 
@@ -246,7 +246,7 @@ equestShutdown() 設定 isShuttingDown = true
 - **FR-052**: `new-task.ps1` MUST 產生與 `run-task.ps1` / `src/lib\` 相容的任務骨架，供 AI 在既有框架上補完，而不是生成獨立專案
 - **FR-053**: `src/lib/` MUST 提供可重用的通用模組，至少包含 `env`、`logger`、`browser`、`security`、`task` 等基礎能力
 - **FR-054**: 任務 bootstrap MUST 記錄可供 AI 除錯的上下文，至少包含 OS、Node.js 版本、執行路徑、腳本路徑、CLI 參數、`.env` 載入結果與 `PLAYWRIGHT_BROWSERS_PATH`
-- **FR-055**: 面向一般使用者的生成 / 除錯 Prompt MUST 單一維護於 `docs/使用指南-Edge.md`；其他文件可以導引，但 MUST NOT 再維護另一份獨立 Prompt 模板
+- **FR-055**: 面向一般使用者的生成 / 除錯 Prompt MUST 單一維護於 `docs/使用指南.md`，並以「短提示 + 精準附件 + 固定輸出契約」設計；MUST NOT 預設 AI 已理解 repo，也 MUST NOT 要求使用者貼一大串固定規則文字
 - **FR-056**: 任務腳本預設 MUST 以 Microsoft Edge（`channel: 'msedge'`）為主要執行瀏覽器；若明確要求沿用既有登入狀態，才可改採 `connectOverCDP()` 附加到 `launch-edge.ps1` 啟動的 Edge
 
 ## 3. 日誌與時間戳規格
@@ -542,14 +542,10 @@ efactor | 重構 |
 | 文件 | 路徑 | 說明 |
 |------|------|------|
 | 功能規格 | docs/spec.md | 本文件 — Given-When-Then 可直接轉換為測試案例 |
-| 使用指南 | docs/使用指南.md | 一般版白話 SOP；AI Prompt 會導向 Edge 指南 |
-| Edge 使用指南 | docs/使用指南-Edge.md | Edge 單位白話 SOP + 生成 / 除錯 Prompt 單一來源 |
-| AI 協作工作流 | docs/AI協作工作流.md | 協作材料整理與流程摘要 |
-| 任務腳本開發規範 | docs/任務腳本開發規範.md | `src/lib` / `run-task` / `new-task` 整合規範 |
+| 使用指南 | docs/使用指南.md | 一般使用者唯一正式指南；整合 SOP、AI 協作、任務執行與 FAQ |
 | README | README.md | 快速開始指引 |
 | Fleet Prompt | Fleet_Prompt.md | repo-local fleet orchestration prompt |
 | AI 開發準則 | .github/copilot-instructions.md | AI 開發規範與安全原則 |
-| 任務審查報告 | docs/任務審查報告.md | 歷次改善計畫的審查結果與發現 |
 
 ## NCERT 月報下載腳本（download-ncert-report.ts）——SDD 與驗證計畫
 
@@ -688,6 +684,7 @@ efactor | 重構 |
 
 | 版本 | 日期 | 變更內容 |
 |------|------|------|
+| 1.7.0 | 2026-03-18 | 將 `docs/使用指南-Edge.md`、`docs/常見問題.md`、`docs/AI協作工作流.md`、`docs/執行任務指南.md`、`docs/任務腳本開發規範.md` 整併為單一 `docs/使用指南.md`；一般使用者 Prompt 改為「短提示 + 精準附件 + 固定輸出契約」，不再預設 AI 已理解 repo；同步更新 README、`new-task.ps1`、`prompt.md` 與 Fleet Prompt |
 | 1.6.0 | 2026-03-18 | 升級為 RPA-Cowork 任務框架：新增 `src/lib/task.ts`、讓 AI 生成腳本統一整合 `new-task.ps1` / `run-task.ps1` / `src/lib/*`，並把一般使用者的生成 / 除錯 Prompt 單一收斂到 `docs/使用指南-Edge.md`；同步更新 README、使用指南、task 開發規範與 Fleet Prompt |
 | 1.4.0 | 2026-03-12 | 新增 Windows PowerShell 一般使用者入口（`install.ps1`、`collect.ps1`），並補上 `scripts\prepare-offline-bundle.ps1` 完整離線包流程；同步更新 README、使用指南與安裝 / 驗收規格 |
 | 1.3.1 | 2026-03-10 | 更新 `npm run collect` 輸出規格：保留 `materials/` 為根目錄，新增 `materials\<YYYYMMDDhhmmss_錄製名稱>\` 任務子資料夾命名規則，並同步調整互動模式、錄製模式、驗收情境與相關輸出路徑描述 |

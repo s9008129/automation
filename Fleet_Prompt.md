@@ -41,12 +41,12 @@ last_updated: 2026-03-18
    - 優先重用 `src/lib/*`
 
 2. **Edge 是主要 AI 協作情境**
-   - 使用者導向的生成 / 除錯 Prompt 以 Edge 指南為主
+   - 使用者導向的生成 / 除錯 Prompt 以 `docs/使用指南.md` 為唯一正式入口
    - 但不得破壞 repo 既有的 Chrome 標準蒐集流程與 Edge 替代入口規則
 
 3. **Prompt 單一來源**
-   - 一般使用者要貼給 AI 的 Prompt，單一來源是 `docs/使用指南-Edge.md`
-   - 其他文件只能導引，不再各自維護一份 prompt 模板
+   - 一般使用者要貼給 AI 的 Prompt，單一來源是 `docs/使用指南.md`
+   - Prompt 必須用「短提示 + 精準附件 + 固定輸出契約」製造上下文，不可預設 AI 已看過 repo，也不可要求使用者貼一大串固定規則
 
 4. **離線包完整性不可退讓**
    - `runtime\node\`
@@ -135,10 +135,10 @@ last_updated: 2026-03-18
 
 | 變更面向 | 必查文件 |
 |----------|----------|
-| 使用者入口 | README.md、docs/使用指南.md、docs/使用指南-Edge.md、docs/spec.md |
-| AI 協作 Prompt | docs/使用指南-Edge.md、docs/使用指南.md、docs/AI協作工作流.md、prompt.md |
-| 任務框架 / src/lib | docs/任務腳本開發規範.md、README.md、docs/spec.md |
-| 離線包組成 | README.md、docs/使用指南.md、docs/使用指南-Edge.md、docs/spec.md |
+| 使用者入口 | README.md、docs/使用指南.md、docs/spec.md |
+| AI 協作 Prompt | docs/使用指南.md、prompt.md、README.md |
+| 任務框架 / src/lib | docs/使用指南.md、README.md、docs/spec.md |
+| 離線包組成 | README.md、docs/使用指南.md、docs/spec.md |
 | 驗證規則 | docs/spec.md、README.md、必要時 Fleet_Prompt.md |
 
 ---
@@ -168,6 +168,6 @@ last_updated: 2026-03-18
 本次 repo-local fleet 準則已對齊以下方向：
 
 - 專案定位升級為 **RPA-Cowork：內部網路自動化協作流程**
-- 一般使用者的生成 / 除錯 Prompt 單一來源收斂到 `docs/使用指南-Edge.md`
+- 一般使用者的生成 / 除錯 Prompt 單一來源收斂到 `docs/使用指南.md`
 - `src/lib/task.ts` 成為任務 bootstrap 的共用模組
-- `new-task.ps1 -> docs/使用指南-Edge.md -> run-task.ps1` 成為最低認知負荷的 AI 協作主線
+- `new-task.ps1 -> docs/使用指南.md -> run-task.ps1` 成為最低認知負荷的 AI 協作主線
