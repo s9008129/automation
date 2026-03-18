@@ -1,10 +1,11 @@
-# 內部網路網頁素材蒐集工具使用指南（Edge 版）
+# RPA-Cowork：內部網路自動化協作流程（Edge 版使用指南）
 
 > 這份文件是給 **固定使用 Microsoft Edge 的內網單位**。
-> 目標只有一件事：**讓你用最短路徑完成 Edge 蒐集流程，並把素材交給 AI 生成腳本或除錯腳本**。
+> 目標只有一件事：**讓你用最短路徑完成 Edge 蒐集流程，並把同一次任務材料交給 AI，在本專案框架內生成或除錯任務腳本**。
 >
 > 以下主線以 **Windows 11 + PowerShell 7.x** 為主。
 > 如果你要看 Chrome / Edge 通用版，請回到 [`docs/使用指南.md`](使用指南.md)。
+> 一般使用者真正要貼給 AI 的 Prompt，也只認這一份文件。
 
 ## 1. 為什麼這個工具選 Playwright，不選 Selenium？
 
@@ -65,6 +66,9 @@
 - `install.ps1`
 - `launch-edge.ps1`
 - `collect.ps1`
+- `new-task.ps1`
+- `run-task.ps1`
+- `src\lib\`
 
 工具包應附 `.env.example` 讓你需要時複製成 `.env`；但 **不應附已填過值的 `.env`**。
 
@@ -310,174 +314,167 @@ logs\
 
 ---
 
+
 ## 6. 要請 AI 幫忙時，怎麼講最省事？
 
-如果你完全沒有提示工程訓練，也沒關係。先記住下面 4 個原則就好：
+先記住一個核心：
 
-1. **先講清楚你要的交付物**
-   你要的是：
-   - 一份 **可直接執行的新腳本**，還是
-   - 一份 **可直接替換的修正版腳本**
+> **AI 不是幫你臨時拼一支獨立腳本，而是幫你補完 RPA-Cowork 框架裡的 `src\任務腳本.ts`。**
 
-2. **只給同一次任務的附件**
-   不要把不同日期、不同網站、不同頁面的材料混在一起，不然 AI 很容易誤判流程。
+也就是說，AI 生成或修正的內容，最後要能直接回到這個專案，用既有的：
 
-3. **成功標準一定要寫成看得到的結果**
-   例如：畫面出現哪句話、網址變成哪一頁、表格出現哪個欄位、下載了哪個檔案。
+- `new-task.ps1`
+- `run-task.ps1`
+- `src\lib\env.ts`
+- `src\lib\logger.ts`
+- `src\lib\browser.ts`
+- `src\lib\security.ts`
+- `src\lib\task.ts`
 
-4. **不知道就寫「不確定」**
-   不要替 AI 先補腦，也不要要求 AI 猜測你是不是已經執行哪個命令、是否已登入、是否停在哪個頁面。
+一起運作。
+
+### 最短協作流程：先開骨架，再交給 AI
+
+先在離線包裡建立任務骨架：
+
+```powershell
+.\new-task.ps1
+```
+
+建立完成後，你會得到像這樣的檔案：
+
+```text
+src\
+└─ case-案件查詢.ts
+```
+
+接著把下面這些東西一起交給 AI：
+
+- 同一次任務的 `aria-snapshots\`
+- 同一次任務的 `screenshots\`
+- 同一次任務的 `recordings\`
+- `metadata.json`
+- 剛剛建立的 `src\腳本骨架`
+- 如果是除錯，再加上 `logs\` 最新日誌與目前失敗的腳本
+
+> ⚠️ 不要上傳 `.env`。裡面可能有帳號、密碼或 token。
 
 ### 你真正要改的地方，只有 `【這裡一定要改】`
 
 第一次使用時，建議你這樣看 Prompt：
 
-- 有標 `【這裡一定要改】` 的地方：請改成你的情況
-- 有標 `【這裡可補充】` 的地方：知道就補，不知道可以留預設或寫「不確定」
-- 其他沒有標註的句子：**先不要改**
+- 有標 `【這裡一定要改】` 的地方：改成你的情況
+- 有標 `【這裡可補充】` 的地方：知道就補，不知道可以寫「不確定」
+- 其他固定句子：先不要改
 
-這樣最安全，因為那些固定句子的目的，是在提醒 AI：
-
-- 只根據附件與明確事實判斷
-- 不要自己猜
-- 輸出必須是腳本 + 使用說明 + 成功檢查方式
-
-### 先看一眼：什麼叫「太空泛」？什麼叫「夠精準」？
-
-**太空泛的寫法：**
-
-```text
-幫我寫自動化。
-```
-
-問題是：AI 不知道你要哪個網站、哪個頁面、想做到哪一步，也不知道成功長什麼樣子。
-
-**比較精準的寫法：**
-
-```text
-請根據我上傳的同一次任務附件，產生可直接執行的 Playwright TypeScript 腳本及使用說明。目標是在 Microsoft Edge 已登入狀態下，從案件查詢頁輸入案件編號並打開第一筆明細。成功時，畫面要出現查詢結果表格，且 URL 進入案件明細頁。
-```
-
-這樣 AI 就比較知道：
-
-- 你要的是 **新腳本**
-- 目標瀏覽器是 **Microsoft Edge**
-- 目標流程是 **案件查詢 → 開啟明細**
-- 成功標準是 **看得到的結果**
+這樣做的目的，是讓 AI 不要亂猜，也不要把腳本寫成脫離本專案框架的獨立版本。
 
 ### 先準備哪些附件？
 
-如果你要請 AI **生成腳本**，建議附上同一次任務的：
+如果你要請 AI **生成新腳本**，建議附上：
 
 - `aria-snapshots\`
 - `screenshots\`
 - `recordings\`
 - `metadata.json`
+- `src\腳本骨架.ts`
 
-如果你要請 AI **除錯**，再加上：
+如果你要請 AI **除錯現有腳本**，再加上：
 
-- 目前失敗的腳本檔
+- 目前失敗的 `src\腳本.ts`
 - `logs\` 裡相關日誌
+- PowerShell 的完整錯誤訊息
 
 ### Edge 版生成腳本 Prompt（空白版）
 
 先上傳附件，再貼上下面這段。
 
-> 使用方式：只改有標 `【這裡一定要改】` 或 `【這裡可補充】` 的地方，其餘句子先保留。
+> 使用方式：只改有標 `【這裡一定要改】` 或 `【這裡可補充】` 的地方，其餘固定句子先保留。
 
 ````text
-你是一位 Playwright 自動化腳本工程師。請根據我上傳的同一次任務附件，產生「可直接在離線安裝包中執行的腳本及相關檔案」。
+你是 RPA-Cowork 任務腳本工程師。請根據我上傳的同一次任務附件，產生「可直接覆蓋本專案 `src\腳本名稱.ts`，並用 `run-task.ps1` 執行」的完整結果。
 
-## 執行環境（Non-Negotiable）
+## 專案與執行邊界（Non-Negotiable）
 
 - Windows 11 + PowerShell 7.x
-- 目標瀏覽器：Microsoft Edge
-- 離線安裝包已包含：Node.js runtime（`runtime\node\node.exe`）、`node_modules\`（含 playwright、tsx、typescript）、`.playwright-browsers\`
-- **無網路、無 npm install、無 npx**
-- 腳本執行指令：`.\runtime\node\node.exe .\node_modules\.bin\tsx 腳本名稱.ts`
-- 瀏覽器已由使用者透過 `launch-edge.ps1` 開啟，CDP 預設端口 `9222`
-- 我已上傳的附件：`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`【這裡可補充：如果你另外有上傳其他檔案，就補在這行後面】
+- 主要瀏覽器：Microsoft Edge
+- 這是完整離線安裝包，已包含 `runtime\node\node.exe`、`node_modules\`、`.playwright-browsers\`、`.env.example`、`new-task.ps1`、`run-task.ps1`、`src\lib\*`
+- 不可要求 `npm install`、`npx`、`npm run`、額外下載套件
+- 我已先用 `new-task.ps1` 建好 `src\腳本名稱.ts` 骨架
+- 我會把你的結果存回 `src\腳本名稱.ts`，並用 `run-task.ps1` 執行
+- 我已上傳的附件：同一次任務的 `aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、腳本骨架 `src\腳本名稱.ts`【這裡可補充】
 
 ## 我要完成的工作
 
-【這裡一定要改】例如：登入後開啟「案件查詢」，輸入案件編號，按「查詢」，再打開第一筆案件明細
+【這裡一定要改】
 
 ## 成功時我應該能觀察到的結果
 
-【這裡一定要改】例如：
-- 查詢結果表格至少出現 1 筆資料
-- 第一筆資料可以被點開
-- URL 包含 `/case/detail`
+【這裡一定要改】
 
 ## 其他我已知的事實
 
-【這裡一定要改】只寫你 100% 確定的事；例如：附件中有登入後首頁、案件查詢頁、查詢結果頁。是否需要二次驗證不確定。
+【這裡一定要改】只寫 100% 確定的事
 
 ## 輸出要求（MUST）
 
-請先讀附件，只根據附件與我明確提供的資訊判斷。如果附件或我的描述沒有證據，請不要自行假設已登入、已停在某頁面；直接列出缺少的資訊。
+請先讀附件，只根據附件與我明確提供的資訊判斷；沒有證據的地方請直接列為缺少資訊，不要自行假設。
 
 ### 1. 附件證據分析
-列出你從哪些附件理解出流程（檔名、畫面文字、ARIA 線索或錄製步驟）。
+列出你從哪些附件理解出流程（檔名、ARIA 線索、截圖文字、錄製步驟）。
 
-### 2. 主腳本：`腳本名稱.ts`
-- 使用 `import { chromium } from 'playwright'` 和 `chromium.connectOverCDP('http://localhost:9222')` 附加到使用者已開啟的 Edge
-- 內建 `.env` 解析（用 `fs.readFileSync` + 逐行解析），**不可 import dotenv 或任何離線包未預裝的套件**
-- 過濾 `chrome://`、`edge://`、`about:blank` 等非使用者頁面
-- 每個關鍵步驟加上 `console.log` 顯示進度（中文），例如：`✅ 已找到查詢按鈕`、`⏳ 正在等待結果表格...`
-- 操作失敗時輸出清楚的中文錯誤訊息，並附上當時的頁面 URL 和可能原因
-- 結束時只 disconnect，不要關閉使用者的 Edge 視窗
-- 使用 `Asia/Taipei` 時區處理所有時間
+### 2. 任務腳本：`src\腳本名稱.ts`
+- 必須直接整合本專案框架，不要生成獨立專案或額外安裝步驟
+- 入口必須使用 `runTaskEntry`（`./lib/task.js`）
+- 依需要重用 `./lib/env.js`、`./lib/logger.js`、`./lib/browser.js`、`./lib/security.js`
+- 預設使用 `launchTaskBrowser({ channel: 'msedge', headless: false })`
+- 只有在我明確說明「要沿用 `launch-edge.ps1` 開出的已登入 Edge 視窗」時，才改用 `cdpConnect()` / `cdpDisconnect()`
+- 關鍵步驟要有正體中文 `log()` 訊息，並在重要輸入 / 狀態使用 `logContext()`
+- 失敗時要能從日誌看出：目前步驟、當下 URL、等待中的元素或狀態、可能原因
+- 若要產生檔名或資料夾名稱，使用 `safeFileName()`
+- 若要導航或處理外部連結，必要時使用 `validateUrl()`
+- 不可 `import dotenv`，不可硬編碼密碼，敏感資料必須從 `.env` 讀取
+- 不可把使用者指令寫成直接呼叫 `node` / `npx`；使用說明一律以 `run-task.ps1` 為主
 
-### 3. 環境設定檔：`.env`
-```
-# 請在等號後面填入你的實際值（不需要加引號）
-RECORDING_PASSWORD=你的密碼
-# 如果有其他需要的變數也列在這裡
-```
+### 3. `.env` 需要新增或調整的欄位
+只列出需要新增的欄位與用途；如果不需要，請明確寫「無」。
 
-### 4. 使用說明：`使用說明.txt`
-精簡扼要、非技術人員友善，只包含：
-- 第一段：這個腳本做什麼（一句話）
-- 第二段：`.env` 怎麼填（列出每個欄位要填什麼）
-- 第三段：執行指令（逐步 PowerShell 指令，可以直接複製貼上）
-- 第四段：怎麼判斷成功了
-- 不要解釋 Node.js、npm、Playwright 是什麼
+### 4. 執行步驟
+用非技術人員看得懂的 PowerShell 步驟說明。
+- 如果腳本需要先附加到已登入 Edge，請先寫 `launch-edge.ps1`
+- 最後一定寫 `run-task.ps1 src\腳本名稱.ts`
 
-### 5. 缺少資訊
-如果資料不夠，列出還缺哪些附件或步驟。
+### 5. 成功檢查方式
+列出我可以肉眼確認的成功訊號。
+
+### 6. 缺少資訊
+如果資料還不夠，列出還缺哪些附件或哪個頁面需要補蒐集。
 
 ## 自我審查（MUST）
-
-輸出前請逐項檢查：
-- [ ] 腳本沒有 `import dotenv` 或 `require('dotenv')`，.env 解析是內建的
-- [ ] 腳本沒有 `npm install`、`npx`、`npm run` 等指令
-- [ ] 腳本用 `connectOverCDP` 而非 `launch` 來連線瀏覽器
-- [ ] 腳本結束時不會關閉使用者的 Edge 視窗
-- [ ] `.env` 範例沒有寫入真實密碼
-- [ ] `使用說明.txt` 沒有提到 npm、npx、Node.js 安裝教學
-- [ ] 執行指令用的是 `.\runtime\node\node.exe .\node_modules\.bin\tsx`
-- [ ] 所有使用者可見的訊息都是中文
-
-如果任何一項不符合，請修正後再輸出。
+- [ ] 腳本放在 `src\`
+- [ ] 腳本入口是 `runTaskEntry`
+- [ ] 腳本重用 `src\lib` 共用模組，而不是自己重寫一套
+- [ ] 沒有 `npm install` / `npx` / 額外套件
+- [ ] 沒有 `import dotenv`
+- [ ] 預設 Edge 模式正確；若使用 CDP 附加，也沒有關閉使用者 Edge 視窗
+- [ ] 使用者可見訊息為正體中文
+- [ ] 執行步驟以 `run-task.ps1` 為主
+- [ ] 如果任何一項不符合，請修正後再輸出
 ````
 
 ### Edge 版生成腳本 Prompt（已填好範例）
 
-如果你看空白版還是沒感覺，下面這份就是 **真的填完會長什麼樣子**：
-
 ````text
-你是一位 Playwright 自動化腳本工程師。請根據我上傳的同一次任務附件，產生「可直接在離線安裝包中執行的腳本及相關檔案」。
+你是 RPA-Cowork 任務腳本工程師。請根據我上傳的同一次任務附件，產生「可直接覆蓋本專案 `src\case-案件查詢.ts`，並用 `.\run-task.ps1 src\case-案件查詢.ts` 執行」的完整結果。
 
-## 執行環境（Non-Negotiable）
+## 專案與執行邊界（Non-Negotiable）
 
 - Windows 11 + PowerShell 7.x
-- 目標瀏覽器：Microsoft Edge
-- 離線安裝包已包含：Node.js runtime（`runtime\node\node.exe`）、`node_modules\`（含 playwright、tsx、typescript）、`.playwright-browsers\`
-- **無網路、無 npm install、無 npx**
-- 腳本執行指令：`.\runtime\node\node.exe .\node_modules\.bin\tsx 案件查詢.ts`
-- 瀏覽器已由使用者透過 `launch-edge.ps1` 開啟，CDP 預設端口 `9222`
-- 我已上傳的附件：`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、`logs\`
+- 主要瀏覽器：Microsoft Edge
+- 這是完整離線安裝包，已包含 `runtime\node\node.exe`、`node_modules\`、`.playwright-browsers\`、`.env.example`、`new-task.ps1`、`run-task.ps1`、`src\lib\*`
+- 不可要求 `npm install`、`npx`、`npm run`
+- 我已先用 `new-task.ps1` 建好 `src\case-案件查詢.ts` 骨架
+- 我已上傳的附件：`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、`src\case-案件查詢.ts`
 
 ## 我要完成的工作
 
@@ -496,146 +493,102 @@ RECORDING_PASSWORD=你的密碼
 
 ## 輸出要求（MUST）
 
-請先讀附件，只根據附件與我明確提供的資訊判斷。如果附件或我的描述沒有證據，請不要自行假設已登入、已停在某頁面；直接列出缺少的資訊。
-
 ### 1. 附件證據分析
-列出你從哪些附件理解出流程（檔名、畫面文字、ARIA 線索或錄製步驟）。
-
-### 2. 主腳本：`案件查詢.ts`
-- 使用 `import { chromium } from 'playwright'` 和 `chromium.connectOverCDP('http://localhost:9222')` 附加到使用者已開啟的 Edge
-- 內建 `.env` 解析（用 `fs.readFileSync` + 逐行解析），**不可 import dotenv 或任何離線包未預裝的套件**
-- 過濾 `chrome://`、`edge://`、`about:blank` 等非使用者頁面
-- 每個關鍵步驟加上 `console.log` 顯示進度（中文），例如：`✅ 已找到查詢按鈕`、`⏳ 正在等待結果表格...`
-- 操作失敗時輸出清楚的中文錯誤訊息，並附上當時的頁面 URL 和可能原因
-- 結束時只 disconnect，不要關閉使用者的 Edge 視窗
-- 使用 `Asia/Taipei` 時區處理所有時間
-
-### 3. 環境設定檔：`.env`
-```
-# 請在等號後面填入你的實際值（不需要加引號）
-RECORDING_PASSWORD=你的密碼
-```
-
-### 4. 使用說明：`使用說明.txt`
-精簡扼要、非技術人員友善，只包含：
-- 第一段：這個腳本做什麼（一句話）
-- 第二段：`.env` 怎麼填（列出每個欄位要填什麼）
-- 第三段：執行指令（逐步 PowerShell 指令，可以直接複製貼上）
-- 第四段：怎麼判斷成功了
-- 不要解釋 Node.js、npm、Playwright 是什麼
-
-### 5. 缺少資訊
-如果資料不夠，列出還缺哪些附件或步驟。
-
-## 自我審查（MUST）
-
-輸出前請逐項檢查：
-- [ ] 腳本沒有 `import dotenv` 或 `require('dotenv')`，.env 解析是內建的
-- [ ] 腳本沒有 `npm install`、`npx`、`npm run` 等指令
-- [ ] 腳本用 `connectOverCDP` 而非 `launch` 來連線瀏覽器
-- [ ] 腳本結束時不會關閉使用者的 Edge 視窗
-- [ ] `.env` 範例沒有寫入真實密碼
-- [ ] `使用說明.txt` 沒有提到 npm、npx、Node.js 安裝教學
-- [ ] 執行指令用的是 `.\runtime\node\node.exe .\node_modules\.bin\tsx`
-- [ ] 所有使用者可見的訊息都是中文
-
-如果任何一項不符合，請修正後再輸出。
+### 2. 任務腳本：`src\case-案件查詢.ts`
+### 3. `.env` 需要新增或調整的欄位
+### 4. 執行步驟
+### 5. 成功檢查方式
+### 6. 缺少資訊
 ````
 
 ### Edge 版除錯 Prompt（空白版）
 
 先上傳附件（含失敗的腳本、錯誤日誌），再貼上下面這段。
 
-> 使用方式：只改有標 `【這裡一定要改】` 或 `【這裡可補充】` 的地方，其餘句子先保留。
+> 使用方式：只改有標 `【這裡一定要改】` 或 `【這裡可補充】` 的地方，其餘固定句子先保留。
 
 ````text
-你是一位 Playwright 自動化腳本除錯工程師。請根據我上傳的附件，診斷問題並產生「可直接在離線安裝包中替換執行的修正版腳本」。
+你是 RPA-Cowork 任務腳本除錯工程師。請根據我上傳的附件，診斷問題並產生「可直接覆蓋本專案 `src\腳本名稱.ts` 的修正版腳本與執行建議」。
 
-## 執行環境（Non-Negotiable）
+## 專案與執行邊界（Non-Negotiable）
 
 - Windows 11 + PowerShell 7.x
-- 目標瀏覽器：Microsoft Edge
-- 離線安裝包已包含：Node.js runtime（`runtime\node\node.exe`）、`node_modules\`（含 playwright、tsx、typescript）、`.playwright-browsers\`
-- **無網路、無 npm install、無 npx**
-- 腳本執行指令：`.\runtime\node\node.exe .\node_modules\.bin\tsx 腳本名稱.ts`
-- 瀏覽器已由使用者透過 `launch-edge.ps1` 開啟，CDP 預設端口 `9222`
+- 主要瀏覽器：Microsoft Edge
+- 這是完整離線安裝包，已包含 `runtime\node\node.exe`、`node_modules\`、`.playwright-browsers\`、`.env.example`、`new-task.ps1`、`run-task.ps1`、`src\lib\*`
+- 不可要求 `npm install`、`npx`、`npm run`
+- 目前失敗的腳本位置是 `src\腳本名稱.ts`
+- 我會把你的修正版存回 `src\腳本名稱.ts`，並用 `run-task.ps1` 重新執行
 - 我已上傳的附件：目前腳本、`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、`logs\`【這裡可補充】
 
 ## 我要完成的工作
 
-【這裡一定要改】例如：在案件查詢頁輸入案件編號後，成功打開第一筆案件明細
+【這裡一定要改】
 
 ## 失敗發生在
 
-【這裡一定要改】例如：按下「查詢」之後，腳本等不到結果表格
+【這裡一定要改】
 
 ## 預期看到的可觀察結果
 
-【這裡一定要改】例如：
-- 結果表格出現至少 1 筆資料
-- 第一筆資料可以被點開
-- URL 包含 `/case/detail`
+【這裡一定要改】
 
 ## 實際看到的現象 / 錯誤訊息
 
-【這裡一定要改】例如：畫面停在查詢頁，PowerShell 顯示 `Timeout 30000ms exceeded while waiting for getByRole('button', { name: '查詢' })`
+【這裡一定要改】
 
 ## 其他我已知的事實
 
-【這裡一定要改】只寫你 100% 確定的事
+【這裡一定要改】只寫 100% 確定的事
 
 ## 輸出要求（MUST）
 
 請先讀附件，只根據附件與我明確提供的資訊判斷。不要自行假設已登入、已停在某頁面。
 
-### 1. 原因診斷（1–3 個最可能原因）
-每個原因都附上你引用的附件證據（檔名、錯誤訊息、ARIA 快照內容）。
+### 1. 根因診斷（1–3 個最可能原因）
+每個原因都附上對應附件證據。
 
-### 2. 修正版腳本：`腳本名稱.ts`
-- 同樣的離線包約束（connectOverCDP、內建 .env 解析、不用 dotenv）
-- 針對診斷出的問題加入修正（例如：加長等待時間、改用更穩定的選擇器、加入重試機制）
-- 在修正的地方加上 `// [FIX] 修正說明` 註解
-- 每個關鍵步驟加上 `console.log` 進度提示（中文）
-- 結束時只 disconnect，不關閉使用者的 Edge 視窗
+### 2. 修正版任務腳本：`src\腳本名稱.ts`
+- 必須保留本專案框架整合方式（`runTaskEntry`、`src/lib/*`、`run-task.ps1`）
+- 不要把腳本改寫成獨立專案或獨立示範程式
+- 如果需要調整瀏覽器模式，先說明為什麼
+- 關鍵修正可以加上 `// [FIX]` 註解
+- 補足 `log()` / `logContext()`，讓下次出錯時更容易定位
+- 若使用 CDP 附加模式，修正版仍不可關閉使用者 Edge 視窗
 
-### 3. 更新的 `.env`（如果需要新增變數）
+### 3. `.env` 需要新增或調整的欄位
 
-### 4. 更新的 `使用說明.txt`（如果執行方式有變）
+### 4. 重新執行步驟
+- 如果需要附加到已登入 Edge，請先寫 `launch-edge.ps1`
+- 最後一定寫 `run-task.ps1 src\腳本名稱.ts`
 
 ### 5. 修正後應檢查的成功訊號
 
 ### 6. 如果問題仍未解決的下一步
-告訴使用者：
-- 要補蒐集哪些素材（回到離線包執行 `collect.ps1 --browser edge` 重新蒐集哪些頁面）
-- 要把哪些檔案再次上傳給 AI
+告訴我還需要補蒐集哪些頁面、哪些附件要再交給 AI。
 
 ## 自我審查（MUST）
-
-輸出前請逐項檢查：
-- [ ] 修正版腳本沒有 `import dotenv`，.env 解析是內建的
-- [ ] 修正版腳本沒有 `npm install`、`npx` 等指令
-- [ ] 修正版腳本用 `connectOverCDP` 連線
-- [ ] 修正版腳本結束時不會關閉使用者的 Edge 視窗
-- [ ] 所有 `[FIX]` 註解都清楚說明修正了什麼
-- [ ] 執行指令用的是 `.\runtime\node\node.exe .\node_modules\.bin\tsx`
-
-如果任何一項不符合，請修正後再輸出。
+- [ ] 修正版仍放在 `src\`
+- [ ] 修正版保留 `runTaskEntry` + `src/lib` 架構
+- [ ] 沒有 `npm install` / `npx` / 額外套件
+- [ ] 沒有 `import dotenv`
+- [ ] 如果有調整瀏覽器模式，原因已明確說明
+- [ ] 執行步驟以 `run-task.ps1` 為主
+- [ ] 如果任何一項不符合，請修正後再輸出
 ````
 
 ### Edge 版除錯 Prompt（已填好範例）
 
 ````text
-你是一位 Playwright 自動化腳本除錯工程師。請根據我上傳的附件，診斷問題並產生「可直接在離線安裝包中替換執行的修正版腳本」。
+你是 RPA-Cowork 任務腳本除錯工程師。請根據我上傳的附件，診斷問題並產生「可直接覆蓋本專案 `src\case-案件查詢.ts` 的修正版腳本與執行建議」。
 
-## 執行環境（Non-Negotiable）
+## 專案與執行邊界（Non-Negotiable）
 
 - Windows 11 + PowerShell 7.x
-- 目標瀏覽器：Microsoft Edge
-- 離線安裝包已包含：Node.js runtime（`runtime\node\node.exe`）、`node_modules\`（含 playwright、tsx、typescript）、`.playwright-browsers\`
-- **無網路、無 npm install、無 npx**
-- 腳本執行指令：`.\runtime\node\node.exe .\node_modules\.bin\tsx 案件查詢.ts`
-- 瀏覽器已由使用者透過 `launch-edge.ps1` 開啟，CDP 預設端口 `9222`
-- 我已上傳的附件：目前腳本 `案件查詢.ts`、`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、`logs\`
+- 主要瀏覽器：Microsoft Edge
+- 這是完整離線安裝包，已包含 `runtime\node\node.exe`、`node_modules\`、`.playwright-browsers\`、`.env.example`、`new-task.ps1`、`run-task.ps1`、`src\lib\*`
+- 不可要求 `npm install`、`npx`、`npm run`
+- 目前失敗的腳本位置是 `src\case-案件查詢.ts`
+- 我已上傳的附件：`src\case-案件查詢.ts`、`aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`、`logs\`
 
 ## 我要完成的工作
 
@@ -662,40 +615,12 @@ RECORDING_PASSWORD=你的密碼
 
 ## 輸出要求（MUST）
 
-請先讀附件，只根據附件與我明確提供的資訊判斷。不要自行假設已登入、已停在某頁面。
-
-### 1. 原因診斷（1–3 個最可能原因）
-每個原因都附上你引用的附件證據（檔名、錯誤訊息、ARIA 快照內容）。
-
-### 2. 修正版腳本：`案件查詢.ts`
-- 同樣的離線包約束（connectOverCDP、內建 .env 解析、不用 dotenv）
-- 針對診斷出的問題加入修正（例如：加長等待時間、改用更穩定的選擇器、加入重試機制）
-- 在修正的地方加上 `// [FIX] 修正說明` 註解
-- 每個關鍵步驟加上 `console.log` 進度提示（中文）
-- 結束時只 disconnect，不關閉使用者的 Edge 視窗
-
-### 3. 更新的 `.env`（如果需要新增變數）
-
-### 4. 更新的 `使用說明.txt`（如果執行方式有變）
-
+### 1. 根因診斷（1–3 個最可能原因）
+### 2. 修正版任務腳本：`src\case-案件查詢.ts`
+### 3. `.env` 需要新增或調整的欄位
+### 4. 重新執行步驟
 ### 5. 修正後應檢查的成功訊號
-
 ### 6. 如果問題仍未解決的下一步
-告訴使用者：
-- 要補蒐集哪些素材（回到離線包執行 `collect.ps1 --browser edge` 重新蒐集哪些頁面）
-- 要把哪些檔案再次上傳給 AI
-
-## 自我審查（MUST）
-
-輸出前請逐項檢查：
-- [ ] 修正版腳本沒有 `import dotenv`，.env 解析是內建的
-- [ ] 修正版腳本沒有 `npm install`、`npx` 等指令
-- [ ] 修正版腳本用 `connectOverCDP` 連線
-- [ ] 修正版腳本結束時不會關閉使用者的 Edge 視窗
-- [ ] 所有 `[FIX]` 註解都清楚說明修正了什麼
-- [ ] 執行指令用的是 `.\runtime\node\node.exe .\node_modules\.bin\tsx`
-
-如果任何一項不符合，請修正後再輸出。
 ````
 
 ### 腳本執行出錯時的人機協作除錯
@@ -704,8 +629,8 @@ RECORDING_PASSWORD=你的密碼
 
 **第一步：收集錯誤資訊**
 
-1. 把 PowerShell 視窗裡的錯誤訊息**全部複製**（從 `.\runtime\node\node.exe ...` 開始到最後一行）
-2. 到離線包裡找你的腳本檔（例如 `案件查詢.ts`）
+1. 把 PowerShell 視窗裡的錯誤訊息**全部複製**
+2. 到離線包裡找你的腳本檔（例如 `src\case-案件查詢.ts`）
 3. 如果有 `.env` 檔，確認裡面的值填對了（但不要把 `.env` 上傳給 AI）
 
 **第二步：蒐集當前頁面狀態**
@@ -719,21 +644,20 @@ RECORDING_PASSWORD=你的密碼
 **第三步：上傳給 AI**
 
 把以下東西一起上傳：
-- 你目前的腳本檔（`.ts`）
-- PowerShell 的完整錯誤訊息（可以貼文字，或截圖）
+
+- 你目前的 `src\` 腳本檔
+- PowerShell 的完整錯誤訊息
 - 剛才重新蒐集的快照（`aria-snapshots\` 和 `screenshots\`）
-- 之前的 `recordings\` 和 `metadata.json`
+- 之前的 `recordings\`、`metadata.json`、`logs\`
 
 然後使用上面的「Edge 版除錯 Prompt」。
 
 **第四步：拿到修正版後**
 
-1. AI 會給你修正版的 `.ts` 腳本
-2. 用修正版替換原本的腳本檔
-3. 重新執行：`.\runtime\node\node.exe .\node_modules\.bin\tsx 腳本名稱.ts`
+1. AI 會給你修正版的 `src\` 腳本內容
+2. 用修正版覆蓋原本的 `src\` 腳本檔
+3. 重新執行：`.\run-task.ps1 src\腳本名稱.ts`
 4. 如果還是失敗，**再重複第一步到第三步**，每次都帶上最新的錯誤訊息和頁面快照
-
-> 💡 **小技巧**：每次除錯時，告訴 AI「這是第幾次嘗試」，並附上前幾次的錯誤訊息，AI 會更容易找到根因。
 
 ### 安全提醒
 
@@ -742,8 +666,6 @@ RECORDING_PASSWORD=你的密碼
 - 不要把整個 Edge 個人資料夾打包上傳
 - 不要把不同任務的附件混在一起
 - 如果截圖或錄製檔含敏感資訊，先依你們單位規則處理後再帶出
-
----
 
 ## 7. 最常見的 3 個問題
 
@@ -776,4 +698,4 @@ RECORDING_PASSWORD=你的密碼
 
 ## 8. 一句話記住
 
-**固定使用 Microsoft Edge 時，就照 `install.ps1 -> launch-edge.ps1 -> collect.ps1 --browser edge` 這條路走；第一次跑 `collect.ps1 --browser edge` 時，優先選 `1` 互動模式最容易成功。要請 AI 幫忙時，只改 Prompt 裡標成 `【這裡一定要改】` 的地方，其他固定句子先保留，這樣最不容易讓 AI 猜錯。**
+**固定使用 Microsoft Edge 時，就照 `install.ps1 -> launch-edge.ps1 -> collect.ps1 --browser edge` 這條路先把素材抓完整；要請 AI 幫忙時，先用 `new-task.ps1` 建立 `src\` 任務骨架，再用本頁第 6 節的 Prompt 把同一次附件交給 AI，最後用 `run-task.ps1 src\腳本名稱.ts` 執行。**

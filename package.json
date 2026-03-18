@@ -1,7 +1,7 @@
 {
   "name": "web-material-collector",
   "version": "1.0.0",
-  "description": "內部網路網頁素材離線蒐集工具 — 完全離線運作，不需要網際網路",
+  "description": "RPA-Cowork：離線優先的內部網路自動化協作流程",
   "type": "module",
   "engines": {
     "node": ">=20.0.0"

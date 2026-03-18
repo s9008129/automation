@@ -1,13 +1,13 @@
-# 功能規格：內部網路網頁素材離線蒐集工具
+# 功能規格：RPA-Cowork 內部網路自動化協作流程
 
-**專案名稱**: web-material-collector
+**專案名稱**: RPA-Cowork（npm package id: web-material-collector）
 **建立日期**: 2026-02-09
-**最後更新**: 2026-03-15（v1.5.0 — 升級為 Chromium branded browser aware，新增 Edge 對應入口與規格同步）
-**狀態**: v1.5.0 — 規格已更新（核心功能現況：ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 優雅關閉 ✅ 錄製密碼清理 ✅ Pre-commit Hook ✅ ARIA-first 工作流 ✅ 離線包流程 ✅ Chrome / Edge aware ✅）
+**最後更新**: 2026-03-18（v1.6.0 — 對齊 RPA-Cowork 任務框架、Edge 協作主線與 Prompt 單一來源）
+**狀態**: v1.6.0 — 規格已更新（核心功能現況：ARIA 快照 ✅ 截圖 ✅ Codegen 錄製 ✅ 互動模式 ✅ 離線包流程 ✅ run-task / new-task ✅ src/lib 共用框架 ✅ Edge 協作 Prompt 單一來源 ✅）
 **環境**: Windows 11 + PowerShell 7.x +（完整離線包或 Node.js v20+）+ Playwright ^1.52.0 + TypeScript ^5.7.3
 
-> **專案定位**：一個「離線素材蒐集工具」——在無外部網路的內部網路環境中，透過 Chromium branded browser 的 CDP Debug 模式連接已登入的瀏覽器（預設 Chrome，也支援 Microsoft Edge），蒐集 ARIA 快照、截圖、Codegen 錄製等素材，供外部 AI 分析生成自動化腳本。
-> **核心價值**：橋接內部網路（無 AI）與外部環境（有 AI）的鴻溝，實現「人工蒐集 → AI 生成 → 內網執行」的工作流程。
+> **專案定位**：RPA-Cowork 是一個「離線優先的內部網路自動化協作流程」——先在內網蒐集素材，再把同一次任務材料交給 AI，最後將 AI 生成 / 修正版任務腳本整合回本專案的 `src\` / `run-task.ps1` / `src/lib\` 框架中執行。
+> **核心價值**：降低非技術使用者與 AI 協作的學習成本，確保所有 AI 生成腳本仍符合專案的離線包、Edge 協作、安全與日誌標準。
 
 ---
 
@@ -55,6 +55,8 @@
 | 📷 截圖蒐集 | 擷取頁面視覺截圖 | Playwright Screenshot |
 | 🎬 Codegen 錄製 | 錄製使用者互動流程 | Playwright Codegen |
 | 📄 HTML 原始碼 | 擷取頁面 HTML（可選） | Playwright Content API |
+| 🤖 任務腳本框架 | AI 生成或人工撰寫的任務腳本統一放在 `src\`，透過 `run-task.ps1` 執行 | `new-task.ps1` / `run-task.ps1` / `src/lib/` |
+| 🧭 AI 協作 Prompt | 一般使用者用單一 Prompt 與 AI 生成 / 除錯腳本 | `docs/使用指南-Edge.md` |
 
 ### 1.3 技術棧
 
@@ -69,7 +71,7 @@
 
 - **OS / Shell**：Windows 11 + PowerShell 7.x（目標環境，也相容 macOS / Linux）
 - **Node.js**：技術人員準備離線包時需要 v20+；一般使用者若使用完整離線包，不要求先自行安裝
-- **瀏覽器**：預設支援 Google Chrome；若指定 Edge 模式，內網電腦需已安裝 Microsoft Edge
+- **瀏覽器**：蒐集流程預設支援 Google Chrome，也提供 Edge 對應入口；任務腳本執行與 AI 協作以 Microsoft Edge 為主
 - **CDP_PORT**：預設 9222（CLI --port / 設定檔 cdpPort 對應同一端口）
 - **Browser 選擇**：CLI 可使用 `--browser chrome|edge`；設定檔可使用 `"browser": "chrome" | "edge"`，且 CLI 參數優先於設定檔
 
@@ -238,7 +240,14 @@ equestShutdown() 設定 isShuttingDown = true
 - **FR-027**: 原始碼與錄製檔中 MUST NOT 包含明文憑證，應使用環境變數或 .env 檔案
 - **FR-028**: `.gitignore` MUST 包含 `.env`、`logs/`、`materials/`、`chrome-debug-profile/`、`edge-debug-profile/`
 
----
+### 2.12 RPA-Cowork 任務框架與 AI 協作
+
+- **FR-051**: AI 生成或人工撰寫的任務腳本 MUST 統一放在 `src\` 目錄，並透過 `run-task.ps1` 執行；一般使用者文件不可把直接呼叫 `node` / `npx` 當成主流程
+- **FR-052**: `new-task.ps1` MUST 產生與 `run-task.ps1` / `src/lib\` 相容的任務骨架，供 AI 在既有框架上補完，而不是生成獨立專案
+- **FR-053**: `src/lib/` MUST 提供可重用的通用模組，至少包含 `env`、`logger`、`browser`、`security`、`task` 等基礎能力
+- **FR-054**: 任務 bootstrap MUST 記錄可供 AI 除錯的上下文，至少包含 OS、Node.js 版本、執行路徑、腳本路徑、CLI 參數、`.env` 載入結果與 `PLAYWRIGHT_BROWSERS_PATH`
+- **FR-055**: 面向一般使用者的生成 / 除錯 Prompt MUST 單一維護於 `docs/使用指南-Edge.md`；其他文件可以導引，但 MUST NOT 再維護另一份獨立 Prompt 模板
+- **FR-056**: 任務腳本預設 MUST 以 Microsoft Edge（`channel: 'msedge'`）為主要執行瀏覽器；若明確要求沿用既有登入狀態，才可改採 `connectOverCDP()` 附加到 `launch-edge.ps1` 啟動的 Edge
 
 ## 3. 日誌與時間戳規格
 
@@ -252,7 +261,7 @@ equestShutdown() 設定 isShuttingDown = true
 |------|-------------|------|------|
 | 任務輸出子資料夾 | 以 Asia/Taipei 14 碼時間戳 + 錄製名稱組成 | YYYYMMDDhhmmss_錄製名稱 | 20260310143000_登入流程 |
 | 日誌行、metadata.json | getTaipeiISO() | YYYY-MM-DDTHH:mm:ss+08:00 | 2026-02-10T14:30:00+08:00 |
-| 檔名後綴（log、runId） | getTaipeiTimestampForFile() | YYYYMMDD-HHmmss | 20260210-143000 |
+| 檔名後綴（log、runId） | getTaipeiTaskTimestamp() | YYYYMMDDhhmmss | 20260210143000 |
 | 顯示用 | getTaipeiTime() | 台灣地區格式 | 2026/2/10 下午2:30:00 |
 
 ### 3.3 日誌檔案規範
@@ -330,18 +339,19 @@ px tsc --noEmit
 
 ## 5. API / Hook 列表
 
-以下列出 collect-materials.ts 中的主要函式與注意事項：
+以下列出 collect / task framework 中的主要函式與注意事項：
 
 ### 5.1 工具函式（模組層級）
 
 | 函式 | 用途 | 注意事項 |
 |------|------|---------|
-| loadDotEnv() | 讀取專案根目錄下的 .env 檔案並注入 process.env | 只在該 key 不存在時設定（不覆蓋已有環境變數）；找不到 .env 時靜默跳過 |
+| loadDotEnv() | 讀取專案根目錄下的 `.env` 檔案並注入 `process.env` | 只在該 key 不存在時設定（不覆蓋已有環境變數）；找不到 `.env` 時靜默跳過 |
+| runTaskEntry() | 初始化 task bootstrap、logger、`.env` 與 runtime/context logging | AI 生成任務腳本應優先使用此入口 |
 | getTaipeiISO() | 產生 ISO 8601 台北時間字串 | 格式：YYYY-MM-DDTHH:mm:ss+08:00 |
-| getTaipeiTimestampForFile() | 產生適合檔名的時間戳 | 格式：YYYYMMDD-HHmmss，用於 log 檔名與 runId |
+| getTaipeiTaskTimestamp() | 產生適合檔名與 runId 的時間戳 | 格式：YYYYMMDDhhmmss |
 | getTaipeiTime() | 產生台灣地區顯示格式時間 | 用於 console 顯示 |
 | safeFileName(name) | 將字串轉為安全檔名 | 防止路徑穿越攻擊 |
-| alidateUrl(url) | 驗證 URL 協定 | 只允許 http:/https:/bout: |
+| validateUrl(url) | 驗證 URL 協定 | 只允許專案允許的協定與格式 |
 
 ### 5.2 MaterialCollector 類別方法
 
@@ -532,13 +542,14 @@ efactor | 重構 |
 | 文件 | 路徑 | 說明 |
 |------|------|------|
 | 功能規格 | docs/spec.md | 本文件 — Given-When-Then 可直接轉換為測試案例 |
-| 使用指南 | docs/使用指南.md | 完整使用教學，步驟可直接複製執行 |
+| 使用指南 | docs/使用指南.md | 一般版白話 SOP；AI Prompt 會導向 Edge 指南 |
+| Edge 使用指南 | docs/使用指南-Edge.md | Edge 單位白話 SOP + 生成 / 除錯 Prompt 單一來源 |
+| AI 協作工作流 | docs/AI協作工作流.md | 協作材料整理與流程摘要 |
+| 任務腳本開發規範 | docs/任務腳本開發規範.md | `src/lib` / `run-task` / `new-task` 整合規範 |
 | README | README.md | 快速開始指引 |
+| Fleet Prompt | Fleet_Prompt.md | repo-local fleet orchestration prompt |
 | AI 開發準則 | .github/copilot-instructions.md | AI 開發規範與安全原則 |
-| Commit 指引 | docs/commit.md | Commit 訊息規範與流程 |
 | 任務審查報告 | docs/任務審查報告.md | 歷次改善計畫的審查結果與發現 |
-
----
 
 ## NCERT 月報下載腳本（download-ncert-report.ts）——SDD 與驗證計畫
 
@@ -677,9 +688,10 @@ efactor | 重構 |
 
 | 版本 | 日期 | 變更內容 |
 |------|------|------|
+| 1.6.0 | 2026-03-18 | 升級為 RPA-Cowork 任務框架：新增 `src/lib/task.ts`、讓 AI 生成腳本統一整合 `new-task.ps1` / `run-task.ps1` / `src/lib/*`，並把一般使用者的生成 / 除錯 Prompt 單一收斂到 `docs/使用指南-Edge.md`；同步更新 README、使用指南、task 開發規範與 Fleet Prompt |
 | 1.4.0 | 2026-03-12 | 新增 Windows PowerShell 一般使用者入口（`install.ps1`、`collect.ps1`），並補上 `scripts\prepare-offline-bundle.ps1` 完整離線包流程；同步更新 README、使用指南與安裝 / 驗收規格 |
 | 1.3.1 | 2026-03-10 | 更新 `npm run collect` 輸出規格：保留 `materials/` 為根目錄，新增 `materials\<YYYYMMDDhhmmss_錄製名稱>\` 任務子資料夾命名規則，並同步調整互動模式、錄製模式、驗收情境與相關輸出路徑描述 |
-| 1.3.0 | 2026-02-11 | 文件全面更新：新增 ARIA-first 工作流說明（T-03 disabled 理由）、修正 sanitize 方向說明（佔位符 vs 實際值）、新增 .env 使用指引與 .env.example、新增 API/Hook 列表（含 loadDotEnv、deprecated 標記）、新增時間戳格式規格、新增安全審計步驟與 CI 建議、新增專案文件索引、更新 SC-009/SC-010 |
+| 1.3.0 | 2026-02-11 | 文件全面更新：新增 ARIA-first 工作流說明（T-03 disabled 理由）、修正 sanitize 方向說明（佔位符 vs 實際值）、新增 `.env` 使用指引與 `.env.example`、新增 API/Hook 列表（含 loadDotEnv、deprecated 標記）、新增時間戳格式規格、新增安全審計步驟與 CI 建議、新增專案文件索引、更新 SC-009/SC-010 |
 | 1.2.0 | 2026-02-10 | 新增 FR-032~FR-039（錄製檔密碼清理、錄製後自動 ARIA 快照、Pre-commit Hook 安全防護） |
 | 1.1.0 | 2026-02-10 | 新增 FR-021~FR-031（CDP 預存頁面、優雅關閉、安全、metadata 時區、log 格式）、SDD/Auto Commit/安全準則 |
 | 1.0.0 | 2026-02-09 | 初始版本：User Stories、FR 需求、成功標準、第一性原理分析 |

@@ -5,6 +5,7 @@
 這份 `README.md` 的角色是**專案介紹與快速導覽**。
 如果你要的是一步一步照著做的操作手冊，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
 若你們單位固定使用 **Microsoft Edge**，可直接看獨立的 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
+一般使用者真正要貼給 AI 的生成 / 除錯 Prompt，也已統一收斂到 `docs/使用指南-Edge.md`。
 
 ## 這個專案解決什麼問題
 
@@ -62,7 +63,7 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 - `node_modules\`：離線執行所需依賴
 - `.playwright-browsers\`：Playwright Chromium runtime（離線包必備）
 - `.env.example`：環境變數範例檔（需要時複製成 `.env` 再填值）
-- `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`、`run-task.ps1`：使用者入口
+- `install.ps1`、`launch-chrome.ps1`、`launch-edge.ps1`、`collect.ps1`、`new-task.ps1`、`run-task.ps1`：使用者入口
 
 打包時應 **保留 `.env.example`，但不得把已填過值的 `.env` 一起帶進離線包**。如果內網電腦跳出 `node` / `npm` / `npx` 找不到，優先視為工具包不完整，不要在現場手動補 PATH。
 
@@ -78,7 +79,7 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 
 **步驟二：與 AI 協作**（帶出到有 AI 的環境）
 
-把 `materials\` 下的 ARIA 快照、截圖和錄製腳本提供給 AI，請 AI 生成任務腳本。
+把 `materials\` 下同一次任務的 ARIA 快照、截圖、錄製腳本，再加上用 `new-task.ps1` 建好的 `src\任務骨架.ts` 提供給 AI。一般使用者實際要貼給 AI 的生成 / 除錯 Prompt，統一看 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
 
 **步驟三：執行任務腳本**
 
@@ -112,7 +113,7 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 `run-task.ps1` 是統一的任務執行入口，可執行 `src\` 下任何 AI 生成或人工撰寫的任務腳本。
 
 ### 6. 共用基礎模組（src/lib/）
-任務腳本開發的基礎設施，包含 env 載入、台北時區日誌、瀏覽器輔助等，確保 AI 生成腳本的一致風格。
+任務腳本開發的基礎設施，包含 env 載入、台北時區日誌、瀏覽器輔助、安全工具與 task bootstrap，確保 AI 生成腳本的一致風格。
 
 ### 7. 敏感資訊保護
 錄製檔會經過清理流程，避免把密碼欄位等敏感資訊直接寫入產出檔案或版本庫。
@@ -140,6 +141,16 @@ ARIA 快照、截圖、錄製         生成 .ts 腳本
 .\launch-edge.ps1
 .\collect.ps1 --browser edge
 ```
+
+### 我要請 AI 幫我建立任務腳本
+
+```powershell
+.\new-task.ps1
+```
+
+先建立 `src\` 任務骨架，再把同一次 `materials\` 任務資料夾和骨架腳本交給 AI。
+Prompt 單一來源請看 [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md)。
+AI 回傳後，直接覆蓋同一個 `src\腳本名稱.ts`，再用 `run-task.ps1` 執行。
 
 ### 我要執行自動化任務
 
@@ -197,7 +208,7 @@ materials\
 
 - **離線優先**：正式使用情境依賴預先打包，不假設可連外網
 - **ARIA-first**：優先蒐集頁面結構，方便 AI 後續分析
-- **共用基礎模組**：`src/lib/` 提供一致的 env、logger、browser helper
+- **共用基礎模組**：`src/lib/` 提供一致的 env、logger、browser、security、task helper
 - **任務資料夾隔離**：每次執行獨立保存成果，方便交接與回溯
 - **不強制關閉使用者瀏覽器**：降低對使用者既有工作狀態的干擾
 - **內網情境導向**：針對已登入、受限網路與人工配合流程設計
@@ -225,8 +236,8 @@ materials\
 |------|------|---------|
 | `README.md` | 專案介紹與快速導覽 | 第一次認識此專案的人 |
 | [`docs/使用指南.md`](docs/使用指南.md) | 白話 SOP、角色分流 | 內網操作使用者 |
-| [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md) | Edge 版白話 SOP | 使用 Edge 的使用者 |
-| [`docs/AI協作工作流.md`](docs/AI協作工作流.md) | AI 協作完整說明 | 想用 AI 生成腳本的人 |
+| [`docs/使用指南-Edge.md`](docs/使用指南-Edge.md) | Edge 版白話 SOP + 生成 / 除錯 Prompt 單一來源 | 使用 Edge 的使用者、要跟 AI 協作的人 |
+| [`docs/AI協作工作流.md`](docs/AI協作工作流.md) | AI 協作材料整理摘要 | 想快速理解附件怎麼整理的人 |
 | [`docs/任務腳本開發規範.md`](docs/任務腳本開發規範.md) | 腳本開發規範 | 開發者、AI 生成腳本時的參考 |
 | [`docs/執行任務指南.md`](docs/執行任務指南.md) | 任務執行說明 | 執行自動化任務的使用者 |
 | [`docs/常見問題.md`](docs/常見問題.md) | FAQ | 遇到問題時 |

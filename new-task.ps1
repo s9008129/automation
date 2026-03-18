@@ -135,15 +135,15 @@ Write-Host "" -ForegroundColor White
 Write-Host "✅ 腳本已建立：src\$ScriptName" -ForegroundColor Green
 Write-Host "" -ForegroundColor White
 Write-Host "下一步：" -ForegroundColor White
-Write-Host "  1. 把 src\$ScriptName 的內容交給 AI 修改，" -ForegroundColor White
-Write-Host "     並提供 ARIA 快照（materials\ 目錄下的 .txt 檔案）" -ForegroundColor White
-Write-Host "  2. AI 修改完成後，儲存到 src\$ScriptName" -ForegroundColor White
-Write-Host "  3. 若腳本需要帳號密碼，先設定 .env 檔案：" -ForegroundColor White
+Write-Host "  1. 準備同一次任務的 materials\ 附件（ARIA 快照、截圖、錄製檔等）" -ForegroundColor White
+Write-Host "  2. 打開 docs\使用指南-Edge.md，第 6 節使用『生成腳本 Prompt』" -ForegroundColor White
+Write-Host "  3. 把 src\$ScriptName 和同一次附件一起交給 AI，請 AI 直接補完這個檔案" -ForegroundColor White
+Write-Host "  4. 若腳本需要帳號密碼，先設定 .env 檔案：" -ForegroundColor White
 Write-Host "       Copy-Item .env.example .env" -ForegroundColor Cyan
 Write-Host "       notepad .env" -ForegroundColor Cyan
-Write-Host "  4. 執行任務：" -ForegroundColor White
+Write-Host "  5. 完成後執行任務：" -ForegroundColor White
 Write-Host "       .\run-task.ps1 src\$ScriptName" -ForegroundColor Cyan
 Write-Host "" -ForegroundColor White
 Write-Host "如需 AI 協作的詳細說明，請參考：" -ForegroundColor White
-Write-Host "  docs\AI協作工作流.md" -ForegroundColor Cyan
+Write-Host "  docs\使用指南-Edge.md" -ForegroundColor Cyan
 Write-Host "" -ForegroundColor White
