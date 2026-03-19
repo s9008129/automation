@@ -166,6 +166,129 @@ export function getUserPages(browser: Browser): Page[] {
   return pages;
 }
 
+
+function globToRegExp(pattern: string): RegExp {
+  const segments = pattern.split('**').map(segment =>
+    segment.replace(/[|\{}()[\]^$+?.]/g, '\\$&').replace(/\*/g, '[^/]*')
+  );
+  return new RegExp(`^${segments.join('.*')}$`);
+}
+
+function matchUrlPattern(url: string, urlPattern: string | RegExp): boolean {
+  if (typeof urlPattern === 'string') {
+    return globToRegExp(urlPattern).test(url);
+  }
+
+  urlPattern.lastIndex = 0;
+  return urlPattern.test(url);
+}
+
+export interface WaitForMatchingPageOptions {
+  /** 等待逾時毫秒數（預設 30000） */
+  timeoutMs?: number;
+  /** 輪詢間隔毫秒數（預設 250） */
+  pollIntervalMs?: number;
+  /** 候選頁面需穩定存活多久才視為可用（預設 1500） */
+  stabilizeMs?: number;
+  /** 說明文字（用於錯誤訊息） */
+  description?: string;
+}
+
+/**
+ * 在同一個 BrowserContext 中等待 URL 符合條件的頁面。
+ *
+ * 適用於 SSO / 憑證登入等流程：登入後可能留在原頁、短暫開啟 popup，
+ * 或在 popup 關閉後另開新頁。此函數會持續掃描 context 內仍存活的頁面，
+ * 找出最後真正導向目標系統的頁面。
+ */
+export async function waitForMatchingPageInContext(
+  context: BrowserContext,
+  urlPattern: string | RegExp,
+  options: WaitForMatchingPageOptions = {}
+): Promise<Page> {
+  const {
+    timeoutMs = 30000,
+    pollIntervalMs = 250,
+    stabilizeMs = 1500,
+    description = '目標頁面',
+  } = options;
+
+  const deadline = Date.now() + timeoutMs;
+  const pageOrder = new Map<Page, number>();
+  let nextPageOrder = 0;
+  let candidatePage: Page | null = null;
+  let candidateSince = 0;
+
+  const rememberPages = (): Page[] => {
+    const openPages = context.pages().filter(page => !page.isClosed());
+    for (const page of openPages) {
+      if (!pageOrder.has(page)) {
+        pageOrder.set(page, nextPageOrder++);
+      }
+    }
+    return openPages;
+  };
+
+  const describeOpenPages = (): string => {
+    const openPages = rememberPages();
+    if (openPages.length === 0) {
+      return '(none)';
+    }
+
+    return openPages
+      .map(page => {
+        const order = pageOrder.get(page) ?? -1;
+        const url = page.url() || '(blank)';
+        return `#${order} ${url}`;
+      })
+      .join(' | ');
+  };
+
+  while (Date.now() < deadline) {
+    const openPages = rememberPages();
+    const matchingPages = openPages
+      .filter(page => matchUrlPattern(page.url(), urlPattern))
+      .sort((a, b) => (pageOrder.get(b) ?? -1) - (pageOrder.get(a) ?? -1));
+
+    const newestMatchingPage = matchingPages[0] ?? null;
+    if (newestMatchingPage !== candidatePage) {
+      candidatePage = newestMatchingPage;
+      candidateSince = newestMatchingPage ? Date.now() : 0;
+    }
+
+    if (
+      candidatePage &&
+      Date.now() - candidateSince >= stabilizeMs &&
+      !candidatePage.isClosed() &&
+      matchUrlPattern(candidatePage.url(), urlPattern)
+    ) {
+      const remainingMs = Math.max(1, deadline - Date.now());
+      try {
+        await candidatePage.waitForLoadState('domcontentloaded', {
+          timeout: Math.min(1000, remainingMs),
+        });
+      } catch {
+        // 某些頁面可能在短時間內切換或已完成載入，忽略即可
+      }
+      if (!candidatePage.isClosed() && matchUrlPattern(candidatePage.url(), urlPattern)) {
+        return candidatePage;
+      }
+    }
+
+    const waitMs = Math.min(pollIntervalMs, Math.max(1, deadline - Date.now()));
+    await Promise.race([
+      context.waitForEvent('page', { timeout: waitMs }).catch(() => null),
+      new Promise(resolve => setTimeout(resolve, waitMs)),
+    ]);
+  }
+
+  throw new Error(
+    `❌ 等待${description}逾時（${timeoutMs / 1000} 秒）。
+` +
+      `目前可用頁面：${describeOpenPages()}`
+  );
+}
+
 // ============================================================
 // iframe 輔助
 // ============================================================

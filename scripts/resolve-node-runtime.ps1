@@ -165,21 +165,27 @@ function Get-NodeVersionInfo {
         [string]$NodeExePath
     )
 
-    $versionOutput = & $NodeExePath "--version" 2>&1 | Select-Object -First 1
+    $versionOutput = @(& $NodeExePath "--version" 2>&1)
     $exitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
     $exitCode = if ($exitCodeVariable) { [int]$exitCodeVariable.Value } else { 0 }
     $versionText = $null
 
-    if ($null -ne $versionOutput) {
-        $versionText = $versionOutput.ToString().Trim()
+    if ($versionOutput.Count -gt 0) {
+        $versionText = $versionOutput[0].ToString().Trim()
     }
 
     if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($versionText)) {
-        throw (Join-MessageLines @(
+        $errorDetails = @(
             "無法讀取 Node.js 版本資訊。"
             "位置：$NodeExePath"
             "ExitCode：$exitCode"
-        ))
+        )
+
+        if (-not [string]::IsNullOrWhiteSpace($versionText)) {
+            $errorDetails += "輸出：$versionText"
+        }
+
+        throw (Join-MessageLines $errorDetails)
     }
 
     $normalizedVersion = $versionText -replace '^[vV]', ''
