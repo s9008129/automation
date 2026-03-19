@@ -67,17 +67,43 @@ export async function runTaskEntry(
   const context = createTaskRunContext(options)
   initLogger(context.logDir, context.runId)
 
-  // ── 安全網：攔截未預期的 uncaughtException / unhandledRejection ──
-  const onFatalError = (label: string) => (error: unknown) => {
+  // ── 安全網：攔截未預期的 fatal error 並寫入日誌 ──
+  // 使用 uncaughtExceptionMonitor 而非 uncaughtException，
+  // 確保只觀察記錄、不抑制 Node.js 預設的 fatal exit 行為。
+  // unhandledRejection 則設定 exitCode = 1 確保非零退出，
+  // 並用 WeakSet 避免同一錯誤重複記錄（Node 15+ 中
+  // unhandledRejection 會再觸發 uncaughtException）。
+  const fatalLogged = new WeakSet<object>()
+  const logFatal = (label: string, error: unknown) => {
+    if (error != null && typeof error === 'object' && fatalLogged.has(error)) {
+      return // 已記錄過，跳過
+    }
+    if (error != null && typeof error === 'object') {
+      fatalLogged.add(error)
+    }
     logError(`[${label}] 未預期錯誤（任務：${context.taskName}）`, error)
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
     const logPath = getLogFilePath()
+    logContext('task.fatal', {
+      trigger: label,
+      durationSeconds: parseFloat(durationSec),
+      errorSummary: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      logFile: logPath,
+    })
     if (logPath) {
       console.error(`📄 完整日誌：${logPath}`)
     }
   }
-  const onUncaughtException = onFatalError('uncaughtException')
-  const onUnhandledRejection = onFatalError('unhandledRejection')
-  process.on('uncaughtException', onUncaughtException)
+  const onExceptionMonitor = (error: unknown) => logFatal('uncaughtException', error)
+  const onUnhandledRejection = (reason: unknown) => {
+    logFatal('unhandledRejection', reason)
+    // 確保 unhandled rejection 導致非零退出
+    if (!process.exitCode) {
+      process.exitCode = 1
+    }
+  }
+  const startTime = Date.now()
+  process.on('uncaughtExceptionMonitor', onExceptionMonitor)
   process.on('unhandledRejection', onUnhandledRejection)
 
   printHeader(`🤖 RPA 任務：${context.taskName}`)
@@ -119,7 +145,6 @@ export async function runTaskEntry(
     logContext('task.additionalContext', options.additionalContext)
   }
 
-  const startTime = Date.now()
   let exitCode: number
 
   try {
@@ -151,7 +176,7 @@ export async function runTaskEntry(
     }
     exitCode = 1
   } finally {
-    process.removeListener('uncaughtException', onUncaughtException)
+    process.removeListener('uncaughtExceptionMonitor', onExceptionMonitor)
     process.removeListener('unhandledRejection', onUnhandledRejection)
   }
 

@@ -104,8 +104,13 @@ export function logError(message: string, error?: unknown): void {
   log('❌', message, 'ERROR');
   if (error !== undefined) {
     const detail = formatErrorDetail(error);
-    // 寫入日誌檔
-    writeLogLine(`[${getTaipeiISO()}][ERROR_DETAIL]\n${detail}`);
+    const ts = getTaipeiISO();
+    // 每行加上 [ERROR_DETAIL] 前綴，方便 grep 與日誌分析
+    const prefixedLines = detail
+      .split('\n')
+      .map(line => `[${ts}][ERROR_DETAIL] ${line}`)
+      .join('\n');
+    writeLogLine(prefixedLines);
     // 同時輸出到 console，讓 PowerShell / 終端也能看到完整錯誤
     console.error(detail);
   }
