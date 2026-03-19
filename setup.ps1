@@ -38,7 +38,8 @@ $RequiredEntries = @(
     @{ Name = "run-task.ps1"; Path = (Join-Path $ProjectRoot "run-task.ps1") },
     @{ Name = "launch-chrome.ps1"; Path = (Join-Path $ProjectRoot "launch-chrome.ps1") },
     @{ Name = "launch-edge.ps1"; Path = (Join-Path $ProjectRoot "launch-edge.ps1") },
-    @{ Name = "collect-materials.ts"; Path = (Join-Path $ProjectRoot "collect-materials.ts") },
+    @{ Name = "collectors\collect-materials.ts"; Path = (Join-Path $ProjectRoot "collectors\collect-materials.ts") },
+    @{ Name = "config\collect-materials-config.json"; Path = (Join-Path $ProjectRoot "config\collect-materials-config.json") },
     @{ Name = ".env.example"; Path = (Join-Path $ProjectRoot ".env.example") },
     @{ Name = "scripts\resolve-node-runtime.ps1"; Path = $ResolveNodeScript }
 )

@@ -11,3 +11,15 @@ logs/
 *.js.map
 output/
 .DS_Store
+.vscode/
+.github/
+.githook/
+.githooks/
+Fleet_Prompt.md
+
+docs/*
+!docs/使用指南.md
+
+src/*
+!src/lib/
+!src/lib/**

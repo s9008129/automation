@@ -151,6 +151,32 @@ export function isInternalUrl(url: string): boolean {
 }
 
 /**
+ * 驗證 URL 是否為專案允許的安全協定。
+ * 允許 http / https / about，並明確排除瀏覽器內部頁面與可執行 scheme。
+ */
+export function validateUrl(url: string): boolean {
+  if (typeof url !== 'string') {
+    return false;
+  }
+
+  const trimmed = url.trim();
+  if (!trimmed || isInternalUrl(trimmed)) {
+    return false;
+  }
+
+  if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:')) {
+    return false;
+  }
+
+  try {
+    const protocol = new URL(trimmed).protocol;
+    return protocol === 'http:' || protocol === 'https:' || protocol === 'about:';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 取得 CDP 瀏覽器中所有使用者可見頁面（過濾內部頁面）。
  */
 export function getUserPages(browser: Browser): Page[] {

@@ -9,7 +9,7 @@
 .EXAMPLE
     . "$PSScriptRoot\resolve-node-runtime.ps1"
     $runtime = Resolve-NodeRuntime -RequireTsx -RequirePlaywright
-    & $runtime.NodeExePath $runtime.TsxCliPath "collect-materials.ts" "--snapshot"
+    & $runtime.NodeExePath $runtime.TsxCliPath "collectors\collect-materials.ts" "--snapshot"
 
 .EXAMPLE
     .\scripts\resolve-node-runtime.ps1 -RequireTsx | Format-List

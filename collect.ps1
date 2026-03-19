@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
 $ResolveNodeScript = Join-Path $ProjectRoot "scripts\resolve-node-runtime.ps1"
-$CollectorScript = Join-Path $ProjectRoot "collect-materials.ts"
+$CollectorScript = Join-Path $ProjectRoot "collectors\collect-materials.ts"
 $LocalBrowserPath = Join-Path $ProjectRoot ".playwright-browsers"
 
 if (-not (Test-Path -Path $ResolveNodeScript -PathType Leaf)) {
@@ -28,7 +28,7 @@ if (-not (Test-Path -Path $ResolveNodeScript -PathType Leaf)) {
 }
 
 if (-not (Test-Path -Path $CollectorScript -PathType Leaf)) {
-    Write-Host "❌ 找不到 collect-materials.ts，這份安裝包不完整。" -ForegroundColor Red
+    Write-Host "❌ 找不到 collectors\collect-materials.ts，這份安裝包不完整。" -ForegroundColor Red
     Write-Host "請先執行 .\install.ps1 檢查安裝包。" -ForegroundColor Yellow
     exit 1
 }

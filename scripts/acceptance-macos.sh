@@ -68,7 +68,7 @@ node "$ROOT_DIR/scripts/verify-materials.mjs" --aria --since "$ARIA_SINCE"
 
 # 啟動錄製流程，使用者操作完成並關閉視窗後再驗證錄製檔。
 echo "==> 啟動 Codegen 錄製（請在新視窗操作後關閉）"
-printf '\n' | npx tsx "$ROOT_DIR/collect-materials.ts" --record "$RECORD_NAME" --url "$TARGET_URL" --port "$PORT"
+printf '\n' | npx tsx "$ROOT_DIR/collectors/collect-materials.ts" --record "$RECORD_NAME" --url "$TARGET_URL" --port "$PORT"
 node "$ROOT_DIR/scripts/verify-materials.mjs" --record "$RECORD_NAME"
 
 echo "✅ 驗收完成"

@@ -172,9 +172,12 @@ interface InteractivePageCaptureResult {
 const TOOL_VERSION = '1.0.0';
 const DEFAULT_CDP_PORT = 9222;
 const DEFAULT_OUTPUT_DIR = './materials';
-const PROJECT_ROOT = path.dirname(fileURLToPath(import.meta.url));
-// 獨立包的設定檔在同一層目錄
-const DEFAULT_CONFIG_PATH = path.join(process.cwd(), 'collect-materials-config.json');
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
+const DEFAULT_CONFIG_RELATIVE_PATH = path.join('config', 'collect-materials-config.json');
+const DEFAULT_CONFIG_DISPLAY_PATH = './config/collect-materials-config.json';
+const LEGACY_CONFIG_RELATIVE_PATH = 'collect-materials-config.json';
+const LEGACY_CONFIG_DISPLAY_PATH = './collect-materials-config.json';
 const LOG_DIR = path.join(process.cwd(), 'logs');
 const INTERNAL_URL_PREFIXES = [
   'chrome://',
@@ -360,11 +363,34 @@ function getArgValue(args: string[], flag: string): string | undefined {
 function getPrimaryCollectCommand(): string {
   return process.platform === 'win32'
     ? '.\\collect.ps1'
-    : 'npx tsx collect-materials.ts';
+    : 'npx tsx collectors/collect-materials.ts';
+}
+
+function getDefaultConfigCandidates(): string[] {
+  const candidates = [
+    path.join(PROJECT_ROOT, DEFAULT_CONFIG_RELATIVE_PATH),
+    path.join(PROJECT_ROOT, LEGACY_CONFIG_RELATIVE_PATH),
+    path.resolve(process.cwd(), DEFAULT_CONFIG_RELATIVE_PATH),
+    path.resolve(process.cwd(), LEGACY_CONFIG_RELATIVE_PATH),
+  ];
+
+  return [...new Set(candidates.map(candidate => path.resolve(candidate)))];
+}
+
+function resolveConfigPath(configPath?: string): string {
+  if (configPath) {
+    return path.resolve(configPath);
+  }
+
+  const defaultCandidates = getDefaultConfigCandidates();
+  return defaultCandidates.find(candidate => fs.existsSync(candidate)) ?? defaultCandidates[0];
 }
 
 function printHelp(): void {
   const primaryCommand = getPrimaryCollectCommand();
+  const configExamplePath = process.platform === 'win32'
+    ? '.\\config\\collect-materials-config.json'
+    : DEFAULT_CONFIG_DISPLAY_PATH;
   const usageLines = [
     '',
     '用法：',
@@ -372,7 +398,7 @@ function printHelp(): void {
     `  ${primaryCommand} --auto`,
     `  ${primaryCommand} --snapshot`,
     `  ${primaryCommand} --record 登入流程`,
-    `  ${primaryCommand} --config .\\collect-materials-config.json`,
+    `  ${primaryCommand} --config ${configExamplePath}`,
     '',
     '常用參數：',
     '  --auto              依設定檔自動蒐集全部素材',
@@ -389,8 +415,9 @@ function printHelp(): void {
     usageLines.push('Windows 一般使用者請直接在專案根目錄執行 .\\collect.ps1。');
     usageLines.push('技術人員原有 npm scripts 仍可繼續使用。');
   } else {
-    usageLines.push('若未使用 PowerShell 入口，可改用 npx tsx collect-materials.ts。');
+    usageLines.push('若未使用 PowerShell 入口，可改用 npx tsx collectors/collect-materials.ts。');
   }
+  usageLines.push(`預設會先讀取 ${DEFAULT_CONFIG_DISPLAY_PATH}，找不到時再退回 ${LEGACY_CONFIG_DISPLAY_PATH}。`);
 
   console.log(usageLines.join('\n'));
 }
@@ -606,9 +633,12 @@ function redactConfigForLog(config: CollectConfig): CollectConfig {
 }
 
 /** 讀取並驗證設定檔 */
-function loadConfig(configPath: string): CollectConfig {
+function loadConfig(configPath: string, options: { explicitPath?: boolean } = {}): CollectConfig {
   if (!fs.existsSync(configPath)) {
     logError(`找不到設定檔: ${configPath}`);
+    if (!options.explicitPath) {
+      log('💡', `預設會先讀取 ${DEFAULT_CONFIG_DISPLAY_PATH}，找不到時再退回 ${LEGACY_CONFIG_DISPLAY_PATH}`);
+    }
     log('💡', `請先建立設定檔，或改用互動模式: ${getPrimaryCollectCommand()}`);
     process.exit(1);
   }
@@ -2318,7 +2348,8 @@ async function main(): Promise<void> {
   console.log('');
   log('🧾', `日誌檔案: ${getLogFilePath() || 'logs/collect-materials-*.log'}`);
 
-  const configPath = getArgValue(args, '--config') || DEFAULT_CONFIG_PATH;
+  const explicitConfigPath = getArgValue(args, '--config');
+  const configPath = resolveConfigPath(explicitConfigPath);
   writeLogContext('configPath', configPath);
 
   const cdpPortValue = getArgValue(args, '--port');
@@ -2332,7 +2363,7 @@ async function main(): Promise<void> {
 
   if (args.includes('--auto')) {
     // 自動模式：完全依設定檔跑完整批次，適合固定流程
-    const config = loadConfig(configPath);
+    const config = loadConfig(configPath, { explicitPath: Boolean(explicitConfigPath) });
     writeLogContext('mode', { mode: 'auto' });
     if (browserArg) config.browser = browserArg;
     if (cdpPortArg) config.cdpPort = cdpPortArg;
@@ -2440,7 +2471,7 @@ async function main(): Promise<void> {
         break;
       }
       case '2': {
-        const config = loadConfig(configPath);
+        const config = loadConfig(configPath, { explicitPath: Boolean(explicitConfigPath) });
         writeLogContext('mode', { mode: 'auto' });
         if (browserArg) config.browser = browserArg;
         if (cdpPortArg) config.cdpPort = cdpPortArg;
@@ -2525,7 +2556,7 @@ main().catch(error => {
   if (process.platform === 'win32') {
     log('💡', '  4. Windows 一般使用者請回到專案根目錄執行 .\\collect.ps1', 'WARN');
   } else {
-    log('💡', '  4. 若未使用 PowerShell 入口，可改用 npx tsx collect-materials.ts', 'WARN');
+    log('💡', '  4. 若未使用 PowerShell 入口，可改用 npx tsx collectors/collect-materials.ts', 'WARN');
   }
   process.exit(1);
 });
