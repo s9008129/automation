@@ -54,7 +54,7 @@ run-task.ps1 src\你的腳本.ts
 
 ## 快速開始
 
-### 我是準備離線包的人
+### 我是準備離線包的人（技術準備者）
 
 ```powershell
 .\scripts\prepare-offline-bundle.ps1
@@ -74,16 +74,20 @@ run-task.ps1 src\你的腳本.ts
 - `new-task.ps1`
 - `run-task.ps1`
 
+> ⚠️ **修改原始碼後必須重新打包。** 如果你更動了 `src/lib/`、`package.json`、Playwright 版本或任何影響執行期的檔案，請重跑 `prepare-offline-bundle.ps1` 再交付。舊離線包不會自動反映這些變更。
+
 ### 我是內網使用者
 
 第一次使用，先照這 4 步：
 
 ```powershell
-.\install.ps1
+.\install.ps1          # 驗證離線包完整性（不會連網下載任何東西）
 .\launch-edge.ps1
 .\collect.ps1 --browser edge
 .\new-task.ps1
 ```
+
+> 🛑 **如果 `install.ps1` 出現紅字錯誤**，代表離線包有缺件。請**立即停止**，把畫面截圖或 `logs\` 資料夾傳給技術準備者處理。**不要自行安裝 Node.js 或 npm**——離線包本身應該已經包含所有執行期依賴。
 
 然後把：
 
@@ -167,12 +171,13 @@ materials\
 
 ---
 
-## 安全與限制
+## 已知限制與注意事項
 
-- 不要把 `.env`、帳號、密碼、token 一起帶出內網
-- 離線包若缺少 `runtime\node\`、`node_modules\` 或 `.playwright-browsers\`，不要在現場自己補安裝，請回到準備者處理
-- 若要使用 Edge，目標電腦必須已安裝 Microsoft Edge；離線包仍以專案內建 Playwright Chromium runtime 為主
-- 遇到高度動態或特殊權限頁面時，仍可能需要人工補充說明與判讀
+- **機敏資料不出內網**：不要把 `.env`、帳號、密碼、token 帶出內網環境
+- **離線包缺件 → 找準備者**：若 `install.ps1` 報告缺少 `runtime\node\`、`node_modules\` 或 `.playwright-browsers\`，請回到技術準備者重新打包，不要在現場自行補裝
+- **Edge 需預先安裝**：離線包以專案內建的 Playwright Chromium runtime 為主；如需使用 Edge，目標電腦必須已安裝 Microsoft Edge
+- **SSO / 彈窗 / 跳轉頁面**：內部系統常見 SSO 登入重導向或彈出新視窗，這是第一次執行腳本時最常見的失敗原因。遇到時請依 [`docs/使用指南.md`](docs/使用指南.md) 的說明讓 AI 調整腳本
+- **動態或特殊權限頁面**：高度動態內容仍可能需要人工補充說明，讓 AI 正確理解頁面結構
 
 ---
 
