@@ -74,7 +74,9 @@ export async function runTaskEntry(
   // 並用 WeakSet 避免同一錯誤重複記錄（Node 15+ 中
   // unhandledRejection 會再觸發 uncaughtException）。
   const fatalLogged = new WeakSet<object>()
+  let fatalObserved = false
   const logFatal = (label: string, error: unknown) => {
+    fatalObserved = true
     if (error != null && typeof error === 'object' && fatalLogged.has(error)) {
       return // 已記錄過，跳過
     }
@@ -151,16 +153,29 @@ export async function runTaskEntry(
     await run(context)
     const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
     const logPath = getLogFilePath()
-    log('🎉', `任務「${context.taskName}」執行完成（耗時 ${durationSec} 秒）`)
-    logContext('task.result', {
-      status: 'success',
-      durationSeconds: parseFloat(durationSec),
-      logFile: logPath,
-    })
-    if (logPath) {
-      log('📄', `日誌檔：${logPath}`)
+    if (fatalObserved || (process.exitCode ?? 0) !== 0) {
+      log('⚠️', '偵測到未處理的致命錯誤，本次任務仍以失敗結束', 'WARN')
+      logContext('task.result', {
+        status: 'fatal',
+        durationSeconds: parseFloat(durationSec),
+        logFile: logPath,
+      })
+      if (logPath) {
+        console.error(`📄 完整日誌：${logPath}`)
+      }
+      exitCode = 1
+    } else {
+      log('🎉', `任務「${context.taskName}」執行完成（耗時 ${durationSec} 秒）`)
+      logContext('task.result', {
+        status: 'success',
+        durationSeconds: parseFloat(durationSec),
+        logFile: logPath,
+      })
+      if (logPath) {
+        log('📄', `日誌檔：${logPath}`)
+      }
+      exitCode = 0
     }
-    exitCode = 0
   } catch (error) {
     const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
     const logPath = getLogFilePath()
