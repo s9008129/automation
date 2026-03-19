@@ -2,15 +2,6 @@
 
 > 先在內網蒐集頁面素材，再交給 AI 補完腳本，最後回到內網執行任務。
 
-`README.md` 只負責**專案介紹與快速導覽**。
-如果你要照步驟操作、建立腳本、跟 AI 協作或查 FAQ，請直接看 [`docs/使用指南.md`](docs/使用指南.md)。
-
-- **第一次認識專案**：看 `README.md`
-- **實際操作 / 跟 AI 合作**：看 [`docs/使用指南.md`](docs/使用指南.md)
-- **維護與規格細節**：看 [`docs/spec.md`](docs/spec.md)
-
----
-
 ## 這個專案解決什麼問題
 
 很多內部網站只能在公司內網使用，但真正要整理自動化腳本、分析流程或請 AI 協助時，往往是在外部環境進行。
@@ -60,21 +51,9 @@ run-task.ps1 src\你的腳本.ts
 .\scripts\prepare-offline-bundle.ps1
 ```
 
-打包完成後，請把**整個產出的資料夾**交給內網使用者，不要只交幾個 `.ps1` 檔。
+打包完成後，請把**整個產出的資料夾**交給內網使用者。
 
-離線包至少應包含：
 
-- `runtime\node\`
-- `node_modules\`
-- `.playwright-browsers\`
-- `.env.example`
-- `install.ps1`
-- `launch-edge.ps1`
-- `collect.ps1`
-- `new-task.ps1`
-- `run-task.ps1`
-
-> ⚠️ **修改原始碼後必須重新打包。** 如果你更動了 `src/lib/`、`package.json`、Playwright 版本或任何影響執行期的檔案，請重跑 `prepare-offline-bundle.ps1` 再交付。舊離線包不會自動反映這些變更。
 
 ### 我是內網使用者
 
@@ -86,15 +65,16 @@ run-task.ps1 src\你的腳本.ts
 .\collect.ps1 --browser edge
 .\new-task.ps1
 ```
+**不要自行安裝 Node.js 或 npm**——離線包本身應該已經包含所有執行依賴。
 
-> 🛑 **如果 `install.ps1` 出現紅字錯誤**，代表離線包有缺件。請**立即停止**，把畫面截圖或 `logs\` 資料夾傳給技術準備者處理。**不要自行安裝 Node.js 或 npm**——離線包本身應該已經包含所有執行期依賴。
+### 與 AI 協作
 
-然後把：
+先用 `new-task.ps1` 建立 `src\任務骨架.ts`，
+再把**骨架檔 + 同一次 materials 任務資料夾**交給 AI。
 
-- `new-task.ps1` 建好的 `src\任務骨架.ts`
-- 同一次任務的 `aria-snapshots\`、`screenshots\`、`recordings\`、`metadata.json`
+一般使用者不用自己拼 Prompt。
+請直接照 [`docs/使用指南.md`](docs/使用指南.md) 的「請 AI 幫你做腳本」操作。
 
-帶到可使用 AI 的環境，照 [`docs/使用指南.md`](docs/使用指南.md) 的方式交給 AI。
 
 最後回到內網執行：
 
@@ -102,15 +82,7 @@ run-task.ps1 src\你的腳本.ts
 .\run-task.ps1 src\你的腳本.ts
 ```
 
-> 如果現場仍指定 Chrome，請把 `launch-edge.ps1` 改成 `launch-chrome.ps1`，並把 `collect.ps1 --browser edge` 改成 `collect.ps1`。
 
-### 要跟 AI 合作？
-
-先用 `new-task.ps1` 建立 `src\任務骨架.ts`，
-再把**骨架檔 + 同一次 materials 任務資料夾**交給 AI。
-
-一般使用者不用自己拼 Prompt。
-請直接照 [`docs/使用指南.md`](docs/使用指南.md) 的「請 AI 幫你做腳本」操作。
 
 ---
 
@@ -157,19 +129,6 @@ materials\
 - `recordings\`：補充操作流程
 - `metadata.json`：補充這次任務的背景資訊
 
----
-
-## 文件導覽
-
-| 文件 | 內容 | 適合誰 |
-|------|------|--------|
-| `README.md` | 專案介紹、流程總覽、快速導覽 | 第一次接觸專案的人 |
-| [`docs/使用指南.md`](docs/使用指南.md) | 唯一正式使用指南：蒐集素材、AI 協作 Prompt、執行任務、FAQ | 一般使用者 |
-| [`docs/spec.md`](docs/spec.md) | 功能規格與設計細節 | 維護者、開發者 |
-| [`Fleet_Prompt.md`](Fleet_Prompt.md) | repo-local fleet orchestration prompt | 需要規劃多代理工作的維護者 |
-
----
-
 ## 已知限制與注意事項
 
 - **機敏資料不出內網**：不要把 `.env`、帳號、密碼、token 帶出內網環境
@@ -182,5 +141,5 @@ materials\
 
 ## 授權與使用
 
-`package.json` 目前標示為 `MIT`。
+目前標示為 `MIT`。
 若在組織內部情境使用，仍請遵守你所在單位的資料處理與資安規範。
