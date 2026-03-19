@@ -99,15 +99,15 @@ export function log(
   writeLogLine(`[${getTaipeiISO()}][${level}] ${emoji} ${message}`);
 }
 
-/** 錯誤日誌，自動格式化 Error 物件 */
+/** 錯誤日誌，自動格式化 Error 物件，同時輸出到 console 與日誌檔 */
 export function logError(message: string, error?: unknown): void {
   log('❌', message, 'ERROR');
   if (error !== undefined) {
-    const detail = formatError(error);
-    writeLogLine(detail.message);
-    if (detail.stack) {
-      writeLogLine(detail.stack);
-    }
+    const detail = formatErrorDetail(error);
+    // 寫入日誌檔
+    writeLogLine(`[${getTaipeiISO()}][ERROR_DETAIL]\n${detail}`);
+    // 同時輸出到 console，讓 PowerShell / 終端也能看到完整錯誤
+    console.error(detail);
   }
 }
 
@@ -145,10 +145,44 @@ export function printSection(title: string): void {
 // 錯誤格式化
 // ============================================================
 
-/** 統一格式化 Error 物件或任意例外 */
+/** 統一格式化 Error 物件或任意例外（保留向後相容） */
 export function formatError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
     return { message: error.message, stack: error.stack };
   }
   return { message: String(error) };
+}
+
+/**
+ * 完整格式化錯誤，包含 name / message / stack / cause 鏈。
+ * 輸出為多行字串，適合直接寫入日誌檔或 console。
+ */
+export function formatErrorDetail(error: unknown, depth = 0): string {
+  const indent = '  '.repeat(depth);
+  const prefix = depth === 0 ? '' : `${indent}[Caused by] `;
+
+  if (!(error instanceof Error)) {
+    return `${prefix}${String(error)}`;
+  }
+
+  const lines: string[] = [];
+  const name = error.name || 'Error';
+  lines.push(`${prefix}${name}: ${error.message}`);
+  if (error.stack) {
+    const stackOnly = error.stack
+      .split('\n')
+      .filter(line => line.trimStart().startsWith('at '))
+      .map(line => `${indent}  ${line.trim()}`)
+      .join('\n');
+    if (stackOnly) {
+      lines.push(stackOnly);
+    }
+  }
+  if ((error as NodeJS.ErrnoException).code) {
+    lines.push(`${indent}  code: ${(error as NodeJS.ErrnoException).code}`);
+  }
+  if ('cause' in error && error.cause != null) {
+    lines.push(formatErrorDetail(error.cause, depth + 1));
+  }
+  return lines.join('\n');
 }

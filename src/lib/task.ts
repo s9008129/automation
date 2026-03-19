@@ -4,6 +4,7 @@ import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { loadDotEnv } from './env.js'
 import {
+  getLogFilePath,
   getTaipeiTaskTimestamp,
   initLogger,
   log,
@@ -65,6 +66,20 @@ export async function runTaskEntry(
 ): Promise<number> {
   const context = createTaskRunContext(options)
   initLogger(context.logDir, context.runId)
+
+  // ── 安全網：攔截未預期的 uncaughtException / unhandledRejection ──
+  const onFatalError = (label: string) => (error: unknown) => {
+    logError(`[${label}] 未預期錯誤（任務：${context.taskName}）`, error)
+    const logPath = getLogFilePath()
+    if (logPath) {
+      console.error(`📄 完整日誌：${logPath}`)
+    }
+  }
+  const onUncaughtException = onFatalError('uncaughtException')
+  const onUnhandledRejection = onFatalError('unhandledRejection')
+  process.on('uncaughtException', onUncaughtException)
+  process.on('unhandledRejection', onUnhandledRejection)
+
   printHeader(`🤖 RPA 任務：${context.taskName}`)
 
   const scriptDisplayPath =
@@ -104,12 +119,41 @@ export async function runTaskEntry(
     logContext('task.additionalContext', options.additionalContext)
   }
 
+  const startTime = Date.now()
+  let exitCode: number
+
   try {
     await run(context)
-    log('🎉', `任務「${context.taskName}」執行完成`)
-    return 0
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
+    const logPath = getLogFilePath()
+    log('🎉', `任務「${context.taskName}」執行完成（耗時 ${durationSec} 秒）`)
+    logContext('task.result', {
+      status: 'success',
+      durationSeconds: parseFloat(durationSec),
+      logFile: logPath,
+    })
+    if (logPath) {
+      log('📄', `日誌檔：${logPath}`)
+    }
+    exitCode = 0
   } catch (error) {
-    logError(`任務「${context.taskName}」執行失敗`, error)
-    return 1
+    const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
+    const logPath = getLogFilePath()
+    logError(`任務「${context.taskName}」執行失敗（耗時 ${durationSec} 秒）`, error)
+    logContext('task.result', {
+      status: 'failure',
+      durationSeconds: parseFloat(durationSec),
+      errorSummary: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+      logFile: logPath,
+    })
+    if (logPath) {
+      console.error(`📄 完整日誌：${logPath}`)
+    }
+    exitCode = 1
+  } finally {
+    process.removeListener('uncaughtException', onUncaughtException)
+    process.removeListener('unhandledRejection', onUnhandledRejection)
   }
+
+  return exitCode
 }

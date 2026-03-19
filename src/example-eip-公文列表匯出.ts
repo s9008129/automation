@@ -148,4 +148,4 @@ const exitCode = await runTaskEntry(
   runTask
 )
 
-process.exit(exitCode)
+process.exitCode = exitCode
