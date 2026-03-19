@@ -684,7 +684,7 @@ efactor | 重構 |
 
 | 版本 | 日期 | 變更內容 |
 |------|------|------|
-| 1.7.0 | 2026-03-18 | 將 `docs/使用指南-Edge.md`、`docs/常見問題.md`、`docs/AI協作工作流.md`、`docs/執行任務指南.md`、`docs/任務腳本開發規範.md` 整併為單一 `docs/使用指南.md`；一般使用者 Prompt 改為「短提示 + 精準附件 + 固定輸出契約」，不再預設 AI 已理解 repo；同步更新 README、`new-task.ps1`、`prompt.md` 與 Fleet Prompt |
+| 1.7.0 | 2026-03-18 | 將 `docs/使用指南-Edge.md`、`docs/常見問題.md`、`docs/AI協作工作流.md`、`docs/執行任務指南.md`、`docs/任務腳本開發規範.md` 整併為單一 `docs/使用指南.md`；一般使用者 Prompt 改為「短提示 + 精準附件 + 固定輸出契約」，不再預設 AI 已理解 repo；同步更新 README、`new-task.ps1` 與 Fleet Prompt |
 | 1.6.0 | 2026-03-18 | 升級為 RPA-Cowork 任務框架：新增 `src/lib/task.ts`、讓 AI 生成腳本統一整合 `new-task.ps1` / `run-task.ps1` / `src/lib/*`，並把一般使用者的生成 / 除錯 Prompt 單一收斂到 `docs/使用指南-Edge.md`；同步更新 README、使用指南、task 開發規範與 Fleet Prompt |
 | 1.4.0 | 2026-03-12 | 新增 Windows PowerShell 一般使用者入口（`install.ps1`、`collect.ps1`），並補上 `scripts\prepare-offline-bundle.ps1` 完整離線包流程；同步更新 README、使用指南與安裝 / 驗收規格 |
 | 1.3.1 | 2026-03-10 | 更新 `npm run collect` 輸出規格：保留 `materials/` 為根目錄，新增 `materials\<YYYYMMDDhhmmss_錄製名稱>\` 任務子資料夾命名規則，並同步調整互動模式、錄製模式、驗收情境與相關輸出路徑描述 |

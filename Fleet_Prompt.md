@@ -136,7 +136,7 @@ RPA-Cowork 不只是素材蒐集工具，而是三段式流程：
 | 變更面向 | 必查文件 |
 |----------|----------|
 | 使用者入口 | README.md、docs/使用指南.md、docs/spec.md |
-| AI 協作 Prompt | docs/使用指南.md、prompt.md、README.md |
+| AI 協作 Prompt | docs/使用指南.md、README.md |
 | 任務框架 / src/lib | docs/使用指南.md、README.md、docs/spec.md |
 | 離線包組成 | README.md、docs/使用指南.md、docs/spec.md |
 | 驗證規則 | docs/spec.md、README.md、必要時 Fleet_Prompt.md |

@@ -164,8 +164,7 @@ materials\
 | 文件 | 內容 | 適合誰 |
 |------|------|--------|
 | `README.md` | 專案介紹、流程總覽、快速導覽 | 第一次接觸專案的人 |
-| [`docs/使用指南.md`](docs/使用指南.md) | 唯一正式使用指南：蒐集素材、AI 協作、執行任務、FAQ | 一般使用者 |
-| [`prompt.md`](prompt.md) | Prompt 入口說明，提醒一般使用者應回到使用指南 | 使用者、維護者 |
+| [`docs/使用指南.md`](docs/使用指南.md) | 唯一正式使用指南：蒐集素材、AI 協作 Prompt、執行任務、FAQ | 一般使用者 |
 | [`docs/spec.md`](docs/spec.md) | 功能規格與設計細節 | 維護者、開發者 |
 | [`Fleet_Prompt.md`](Fleet_Prompt.md) | repo-local fleet orchestration prompt | 需要規劃多代理工作的維護者 |
 
