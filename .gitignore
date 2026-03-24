@@ -19,6 +19,8 @@ Fleet_Prompt.md
 
 docs/*
 !docs/使用指南.md
+!docs/生成腳本.md
+!docs/debug.md
 
 src/*
 !src/lib/
