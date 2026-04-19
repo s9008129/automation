@@ -170,8 +170,7 @@ function doEncrypt(projectRoot) {
     // 跳過空值
     if (entry.val.length === 0) continue;
     entry.val = encryptValue(entry.val, key);
-    // 加密後的 ENC(...) 值不需要引號包裝；保留原始 quoted 標記供解密後還原
-    entry.quotedOriginal = entry.quoted;
+    // 加密後的 ENC(...) 值不需要引號包裝
     entry.quoted = '';
     encCount++;
   }
@@ -335,7 +334,14 @@ function doRotateKey(projectRoot) {
     if (entry.type !== 'kv') continue;
     if (!isEncrypted(entry.val)) continue;
     try {
-      entry.val = decryptValue(entry.val, oldKey);
+      const decrypted = decryptValue(entry.val, oldKey);
+      entry.val = decrypted;
+      // 若解密後的值含前後空白，自動加上雙引號保護語意
+      if (decrypted.length > 0 && (decrypted.startsWith(' ') || decrypted.endsWith(' '))) {
+        entry.quoted = '"';
+      } else {
+        entry.quoted = '';
+      }
     } catch (err) {
       console.error(`❌ 用舊金鑰解密 ${entry.key} 失敗：${err.message}`);
       process.exit(1);
