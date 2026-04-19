@@ -343,6 +343,7 @@ $copyArgs = @("/XD") + $excludeDirectories + @(
     "/XF",
     "*.log",
     ".env",
+    ".env.key",
     ".env.local",
     ".env.development",
     ".env.production",
@@ -358,7 +359,12 @@ if (Test-Path -Path $BundleDotEnv -PathType Leaf) {
     throw "bundle 不應包含 .env，請先移除實際憑證後重新打包。"
 }
 
-Write-Log "INFO" "  ✅ 已包含 .env.example，且未帶入 .env" -Color Green
+$BundleDotEnvKey = Join-Path $BundleRoot ".env.key"
+if (Test-Path -Path $BundleDotEnvKey -PathType Leaf) {
+    throw "bundle 不應包含 .env.key（加密金鑰），請先移除後重新打包。"
+}
+
+Write-Log "INFO" "  ✅ 已包含 .env.example，且未帶入 .env / .env.key" -Color Green
 
 Write-Log "INFO" ""
 Write-Log "INFO" "  [2/5] 補齊專案內建 Node.js runtime..." -Color White

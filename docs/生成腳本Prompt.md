@@ -32,7 +32,8 @@
 
 專案已有的共享模組（直接 import 使用，不要重寫）：
 - ./lib/task.js — 任務入口：runTaskEntry、TaskRunContext
-- ./lib/env.js — 環境變數：getEnv、requireEnv
+- ./lib/env.js — 環境變數：getEnv、requireEnv（自動支援 ENC(...) 加密值透明解密）
+- ./lib/crypto.js — 加解密工具：isEncrypted、encryptValue、decryptValue、loadKeyFile、generateKey（一般腳本不需直接使用，由 env.js 自動處理）
 - ./lib/logger.js — 日誌輸出：log、logContext、printSection
 - ./lib/browser.js — 瀏覽器控制：launchTaskBrowser、closeTaskBrowser、cdpConnect、cdpDisconnect、getNestedFrame、waitForMatchingPageInContext、waitForNavigation、takeScreenshot
 - ./lib/security.js — 檔名安全處理：safeFileName
@@ -44,6 +45,8 @@
 - 優先使用上面列出的共享模組（從 ./lib/*.js import），不要重寫瀏覽器、環境變數、日誌、任務入口、檔名安全等已有功能
 - 不要叫我執行 npm install、npx 或 npm run
 - 帳號密碼不要寫死在程式裡，改用 requireEnv 或 getEnv 從 .env 讀取
+- .env 中的值可能是加密過的 ENC(...) 格式，loadDotEnv() 會自動解密，腳本中直接使用 requireEnv/getEnv 即可
+- run-task.ps1 會在執行前自動解密 .env、執行後自動換鑰並重新加密，腳本不需要自己處理加解密邏輯
 
 請依照以下順序回覆：
 1. 你從附件裡看懂了什麼（頁面結構、按鈕位置等）

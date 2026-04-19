@@ -36,6 +36,7 @@ $RequiredEntries = @(
     @{ Name = "install.ps1"; Path = (Join-Path $ProjectRoot "install.ps1") },
     @{ Name = "collect.ps1"; Path = (Join-Path $ProjectRoot "collect.ps1") },
     @{ Name = "run-task.ps1"; Path = (Join-Path $ProjectRoot "run-task.ps1") },
+    @{ Name = "protect-env.ps1"; Path = (Join-Path $ProjectRoot "protect-env.ps1") },
     @{ Name = "launch-chrome.ps1"; Path = (Join-Path $ProjectRoot "launch-chrome.ps1") },
     @{ Name = "launch-edge.ps1"; Path = (Join-Path $ProjectRoot "launch-edge.ps1") },
     @{ Name = "collectors\collect-materials.ts"; Path = (Join-Path $ProjectRoot "collectors\collect-materials.ts") },
@@ -215,7 +216,7 @@ function Ensure-RequiredEntries {
     }
 
     if ($missingEntries.Count -eq 0) {
-        Write-Log "INFO" "  ✅ install / collect / launch（Chrome / Edge）與 .env.example 已就緒" -Color Green
+        Write-Log "INFO" "  ✅ install / collect / protect-env / launch（Chrome / Edge）與 .env.example 已就緒" -Color Green
         return
     }
 

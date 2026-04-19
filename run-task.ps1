@@ -123,6 +123,129 @@ if (Test-Path -Path $LocalBrowserPath -PathType Container) {
 }
 
 # ────────────────────────────────────────────────────────────
+# 🔐 任務執行前：自動解密 .env（若已加密）
+#    並註冊收尾保護，避免任務失敗 / 中斷時留下明文
+# ────────────────────────────────────────────────────────────
+
+$ProtectEnvScript = Join-Path $ProjectRoot "scripts\protect-env.mjs"
+$EnvFile = Join-Path $ProjectRoot ".env"
+$EnvKeyFile = Join-Path $ProjectRoot ".env.key"
+
+$script:needsPostEncrypt = $false
+$script:postEncryptInProgress = $false
+$script:postEncryptCompleted = $false
+
+function Invoke-PostTaskEnvProtection {
+    if (-not $script:needsPostEncrypt) {
+        return
+    }
+
+    if ($script:postEncryptInProgress -or $script:postEncryptCompleted) {
+        return
+    }
+
+    if (-not (Test-Path -Path $EnvFile -PathType Leaf) -or -not (Test-Path -Path $ProtectEnvScript -PathType Leaf)) {
+        return
+    }
+
+    $script:postEncryptInProgress = $true
+
+    try {
+        $currentEnvContent = Get-Content -Path $EnvFile -Raw -ErrorAction SilentlyContinue
+        if ($currentEnvContent -match "ENC\(") {
+            $script:postEncryptCompleted = $true
+            $script:needsPostEncrypt = $false
+            return
+        }
+
+        Write-Host "🔐 正在重新加密 .env..." -ForegroundColor DarkCyan
+        & $runtime.NodeExePath $ProtectEnvScript --encrypt 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning ".env 重新加密失敗，請立即檢查 .env 與 .env.key。"
+            return
+        }
+
+        $script:postEncryptCompleted = $true
+        $script:needsPostEncrypt = $false
+        Write-Host "✅ .env 已重新加密" -ForegroundColor DarkGreen
+    } finally {
+        $script:postEncryptInProgress = $false
+    }
+}
+
+trap {
+    Invoke-PostTaskEnvProtection
+    throw
+}
+
+Register-EngineEvent `
+    -SourceIdentifier PowerShell.Exiting `
+    -SupportEvent `
+    -MessageData @{
+        NeedsPostEncrypt = [ref]$script:needsPostEncrypt
+        PostEncryptInProgress = [ref]$script:postEncryptInProgress
+        PostEncryptCompleted = [ref]$script:postEncryptCompleted
+        EnvFile = $EnvFile
+        ProtectEnvScript = $ProtectEnvScript
+        NodeExePath = $runtime.NodeExePath
+    } `
+    -Action {
+        $state = $event.MessageData
+
+        if (-not $state.NeedsPostEncrypt.Value) {
+            return
+        }
+
+        if ($state.PostEncryptInProgress.Value -or $state.PostEncryptCompleted.Value) {
+            return
+        }
+
+        if (-not (Test-Path -Path $state.EnvFile -PathType Leaf) -or -not (Test-Path -Path $state.ProtectEnvScript -PathType Leaf)) {
+            return
+        }
+
+        $state.PostEncryptInProgress.Value = $true
+
+        try {
+            $currentEnvContent = Get-Content -Path $state.EnvFile -Raw -ErrorAction SilentlyContinue
+            if ($currentEnvContent -match "ENC\(") {
+                $state.PostEncryptCompleted.Value = $true
+                $state.NeedsPostEncrypt.Value = $false
+                return
+            }
+
+            & $state.NodeExePath $state.ProtectEnvScript --encrypt 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $state.PostEncryptCompleted.Value = $true
+                $state.NeedsPostEncrypt.Value = $false
+            }
+        } finally {
+            $state.PostEncryptInProgress.Value = $false
+        }
+    } | Out-Null
+
+if ((Test-Path -Path $EnvFile -PathType Leaf) -and (Test-Path -Path $ProtectEnvScript -PathType Leaf)) {
+    # 檢查 .env 是否含有 ENC(...) 加密值
+    $envContent = Get-Content -Path $EnvFile -Raw -ErrorAction SilentlyContinue
+    if ($envContent -match "ENC\(") {
+        if (Test-Path -Path $EnvKeyFile -PathType Leaf) {
+            Write-Host "🔓 偵測到加密的 .env，正在解密..." -ForegroundColor DarkCyan
+            & $runtime.NodeExePath $ProtectEnvScript --decrypt 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "❌ .env 解密失敗，請檢查金鑰是否正確。" -ForegroundColor Red
+                exit 1
+            }
+            $script:needsPostEncrypt = $true
+            Write-Host "✅ .env 已解密，準備執行任務" -ForegroundColor DarkGreen
+        } else {
+            Write-Host "⚠️  .env 含有加密值但找不到 .env.key 金鑰檔。" -ForegroundColor Yellow
+            Write-Host "   請確認金鑰檔案存在，或重新執行 .\protect-env.ps1 產生金鑰。" -ForegroundColor Yellow
+            exit 1
+        }
+    }
+}
+
+# ────────────────────────────────────────────────────────────
 # 執行任務腳本
 # ────────────────────────────────────────────────────────────
 
@@ -131,13 +254,33 @@ Write-Host "▶ 正在執行：$ScriptDisplayName" -ForegroundColor Cyan
 
 & $runtime.NodeExePath $runtime.TsxCliPath $AbsoluteScriptPath @TaskArgs
 
-$exitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
-if ($exitCodeVariable) {
-    exit ([int]$exitCodeVariable.Value)
+$taskExitCode = $LASTEXITCODE
+
+# ────────────────────────────────────────────────────────────
+# 🔐 任務執行後：自動換鑰 + 重新加密 .env
+# ────────────────────────────────────────────────────────────
+
+if ($needsPostEncrypt -and (Test-Path -Path $EnvFile -PathType Leaf)) {
+    Write-Host "" -ForegroundColor White
+    Write-Host "🔄 任務完成，正在更換金鑰並重新加密 .env..." -ForegroundColor DarkCyan
+
+    # 先加密（用現有金鑰）
+    & $runtime.NodeExePath $ProtectEnvScript 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "⚠️  .env 重新加密失敗。" -ForegroundColor Yellow
+    } else {
+        # 再換鑰（產生新金鑰並重新加密）
+        & $runtime.NodeExePath $ProtectEnvScript --rotate-key 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️  金鑰輪換失敗，但 .env 仍保持加密狀態。" -ForegroundColor Yellow
+        } else {
+            Write-Host "✅ .env 已使用新金鑰重新加密" -ForegroundColor DarkGreen
+        }
+    }
 }
 
-if ($?) {
-    exit 0
-}
+# ────────────────────────────────────────────────────────────
+# 回傳任務執行結果
+# ────────────────────────────────────────────────────────────
 
-exit 1
+exit $taskExitCode
