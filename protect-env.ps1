@@ -57,7 +57,8 @@ $nodeInfo = Resolve-NodeRuntime -ProjectRoot $ProjectRoot -MinVersion "20.0.0"
 if (-not $nodeInfo -or -not $nodeInfo.NodeExePath) {
     Write-Host ""
     Write-Host "❌ 找不到 Node.js Runtime（需要 v20 以上）" -ForegroundColor Red
-    Write-Host "   請確認離線包中包含 runtime\node 資料夾。" -ForegroundColor Yellow
+    Write-Host "   若使用離線包，請確認 runtime\node 資料夾存在。" -ForegroundColor Yellow
+    Write-Host "   若使用全域 Node.js，請確認版本 >= v20。" -ForegroundColor Yellow
     exit 1
 }
 

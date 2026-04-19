@@ -26,7 +26,12 @@ const ENC_SUFFIX = ')';
 const KEY_FILE_NAME = '.env.key';
 const ENV_FILE_NAME = '.env';
 
-// ── 台北時間 ───────────────────────────────────────────────
+// ── 平台感知的指令提示 ─────────────────────────────────────
+function getProtectCmd() {
+  return process.platform === 'win32'
+    ? '.\\protect-env.ps1'
+    : 'node scripts/protect-env.mjs';
+}
 function getTaipeiTime() {
   return new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
 }
@@ -222,8 +227,9 @@ function doDecrypt(projectRoot) {
   console.log(`  ✅ 解密了 ${decCount} 個值`);
   console.log(`  📄 檔案：${envPath}`);
   console.log('');
+  const reEncryptHint = getProtectCmd();
   console.log('  ⚠️  .env 現在包含明文密碼，建議編輯完成後重新加密：');
-  console.log('      .\\protect-env.ps1');
+  console.log(`      ${reEncryptHint}`);
   console.log('');
 }
 
@@ -282,10 +288,10 @@ function doStatus(projectRoot) {
 
   if (plainCount > 0 && encCount === 0) {
     console.log('  🔴 安全等級：未加密');
-    console.log('     建議執行 .\\protect-env.ps1 加密敏感值。');
+    console.log(`     建議執行 ${getProtectCmd()} 加密敏感值。`);
   } else if (plainCount > 0 && encCount > 0) {
     console.log('  🟡 安全等級：部分加密');
-    console.log('     建議重新執行 .\\protect-env.ps1 加密剩餘明文值。');
+    console.log(`     建議重新執行 ${getProtectCmd()} 加密剩餘明文值。`);
   } else if (encCount > 0 && plainCount === 0) {
     console.log('  🟢 安全等級：全部加密');
   } else {
@@ -304,7 +310,7 @@ function doRotateKey(projectRoot) {
   const oldKey = loadKeyFile(projectRoot);
   if (!oldKey) {
     console.error(`❌ 找不到舊金鑰 ${KEY_FILE_NAME}，無法換鑰。`);
-    console.error('   若要首次加密，請直接執行 .\\protect-env.ps1（不加 --rotate-key）。');
+    console.error(`   若要首次加密，請直接執行 ${getProtectCmd()}（不加 --rotate-key）。`);
     process.exit(1);
   }
 
