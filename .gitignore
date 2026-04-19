@@ -5,6 +5,7 @@ chrome-debug-profile/
 edge-debug-profile/
 logs/
 .env
+.env.key
 .playwright-browsers/
 *.js
 *.d.ts
