@@ -200,12 +200,20 @@ console.log('');
 console.log('━━ TEST 6: .env 檔案完整往返 ━━━━━━━━━━━━━━━━━━━━━━');
 {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'env-test-'));
+  const parseEnvValue = (rawValue) => {
+    const trimmed = rawValue.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  };
   try {
     const envPath = path.join(tmpDir, '.env');
     const envContent = [
       '# 註解行',
       'CERT_PASSWORD=my_secret_password',
       'API_KEY=abc123xyz',
+      'QUOTED_SPACED="  padded secret  "',
       '',
       '# 另一段註解',
       'EMPTY_VAR=',
@@ -224,7 +232,7 @@ console.log('━━ TEST 6: .env 檔案完整往返 ━━━━━━━━━�
         continue;
       }
       const k = m[1].trim();
-      let v = m[2].trim();
+      let v = parseEnvValue(m[2]);
       if (v.length > 0 && !isEncrypted(v)) {
         v = encryptValue(v, key);
       }
@@ -238,12 +246,13 @@ console.log('━━ TEST 6: .env 檔案完整往返 ━━━━━━━━━�
       const m = line.match(/^\s*([^#=\s][^=]*?)\s*=\s*(.*)\s*$/);
       if (!m) continue;
       const k = m[1].trim();
-      let v = m[2].trim();
+      let v = parseEnvValue(m[2]);
       if (isEncrypted(v)) {
         v = decryptValue(v, key);
       }
       if (k === 'CERT_PASSWORD') assertEqual(v, 'my_secret_password', '.env CERT_PASSWORD 往返');
       if (k === 'API_KEY') assertEqual(v, 'abc123xyz', '.env API_KEY 往返');
+      if (k === 'QUOTED_SPACED') assertEqual(v, '  padded secret  ', '.env QUOTED_SPACED 保留引號內前後空白語意');
       if (k === 'EMPTY_VAR') assertEqual(v, '', '.env EMPTY_VAR 保持空白');
     }
   } finally {
