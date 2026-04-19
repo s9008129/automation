@@ -144,7 +144,7 @@ materials\
 ## 已知限制與注意事項
 
 - **機敏資料不出內網**：不要把 `.env`、`.env.key`、帳號、密碼、token 帶出內網環境
-- **🔐 建議加密 .env**：填好 `.env` 後執行 `.\protect-env.ps1`，可用 AES-256-GCM 加密保護敏感值。詳見 [`docs/使用指南.md`](docs/使用指南.md)
+- **🔐 .env 自動加解密**：`run-task.ps1` 會在執行前自動解密 `.env`，執行後自動更換金鑰並重新加密，使用者無需額外操作。首次使用請先執行 `.\protect-env.ps1` 加密敏感值。詳見 [`docs/使用指南.md`](docs/使用指南.md)
 - **離線包缺件 → 找準備者**：若 `install.ps1` 報告缺少 `runtime\node\`、`node_modules\` 或 `.playwright-browsers\`，請回到技術準備者重新打包，不要在現場自行補裝
 - **Edge 需預先安裝**：離線包以專案內建的 Playwright Chromium runtime 為主；如需使用 Edge，目標電腦必須已安裝 Microsoft Edge
 - **SSO / 彈窗 / 跳轉頁面**：內部系統常見 SSO 登入重導向或彈出新視窗，這是第一次執行腳本時最常見的失敗原因。遇到時請依 [`docs/使用指南.md`](docs/使用指南.md) 的說明讓 AI 調整腳本

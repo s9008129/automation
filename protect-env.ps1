@@ -52,7 +52,7 @@ if (-not (Test-Path $ResolveNodeScript)) {
 }
 
 . $ResolveNodeScript
-$nodeInfo = Resolve-NodeRuntime -ProjectRoot $ProjectRoot -MinVersion "20.0.0"
+$nodeInfo = Resolve-NodeRuntime -ProjectRoot $ProjectRoot -MinimumMajorVersion 20
 
 if (-not $nodeInfo -or -not $nodeInfo.NodeExePath) {
     Write-Host ""

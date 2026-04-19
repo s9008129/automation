@@ -123,6 +123,37 @@ if (Test-Path -Path $LocalBrowserPath -PathType Container) {
 }
 
 # ────────────────────────────────────────────────────────────
+# 🔐 任務執行前：自動解密 .env（若已加密）
+# ────────────────────────────────────────────────────────────
+
+$ProtectEnvScript = Join-Path $ProjectRoot "scripts\protect-env.mjs"
+$EnvFile = Join-Path $ProjectRoot ".env"
+$EnvKeyFile = Join-Path $ProjectRoot ".env.key"
+
+$needsPostEncrypt = $false
+
+if ((Test-Path -Path $EnvFile -PathType Leaf) -and (Test-Path -Path $ProtectEnvScript -PathType Leaf)) {
+    # 檢查 .env 是否含有 ENC(...) 加密值
+    $envContent = Get-Content -Path $EnvFile -Raw -ErrorAction SilentlyContinue
+    if ($envContent -match "ENC\(") {
+        if (Test-Path -Path $EnvKeyFile -PathType Leaf) {
+            Write-Host "🔓 偵測到加密的 .env，正在解密..." -ForegroundColor DarkCyan
+            & $runtime.NodeExePath $ProtectEnvScript --decrypt 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "❌ .env 解密失敗，請檢查金鑰是否正確。" -ForegroundColor Red
+                exit 1
+            }
+            $needsPostEncrypt = $true
+            Write-Host "✅ .env 已解密，準備執行任務" -ForegroundColor DarkGreen
+        } else {
+            Write-Host "⚠️  .env 含有加密值但找不到 .env.key 金鑰檔。" -ForegroundColor Yellow
+            Write-Host "   請確認金鑰檔案存在，或重新執行 .\protect-env.ps1 產生金鑰。" -ForegroundColor Yellow
+            exit 1
+        }
+    }
+}
+
+# ────────────────────────────────────────────────────────────
 # 執行任務腳本
 # ────────────────────────────────────────────────────────────
 
@@ -131,13 +162,33 @@ Write-Host "▶ 正在執行：$ScriptDisplayName" -ForegroundColor Cyan
 
 & $runtime.NodeExePath $runtime.TsxCliPath $AbsoluteScriptPath @TaskArgs
 
-$exitCodeVariable = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
-if ($exitCodeVariable) {
-    exit ([int]$exitCodeVariable.Value)
+$taskExitCode = $LASTEXITCODE
+
+# ────────────────────────────────────────────────────────────
+# 🔐 任務執行後：自動換鑰 + 重新加密 .env
+# ────────────────────────────────────────────────────────────
+
+if ($needsPostEncrypt -and (Test-Path -Path $EnvFile -PathType Leaf)) {
+    Write-Host "" -ForegroundColor White
+    Write-Host "🔄 任務完成，正在更換金鑰並重新加密 .env..." -ForegroundColor DarkCyan
+
+    # 先加密（用現有金鑰）
+    & $runtime.NodeExePath $ProtectEnvScript 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "⚠️  .env 重新加密失敗。" -ForegroundColor Yellow
+    } else {
+        # 再換鑰（產生新金鑰並重新加密）
+        & $runtime.NodeExePath $ProtectEnvScript --rotate-key 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "⚠️  金鑰輪換失敗，但 .env 仍保持加密狀態。" -ForegroundColor Yellow
+        } else {
+            Write-Host "✅ .env 已使用新金鑰重新加密" -ForegroundColor DarkGreen
+        }
+    }
 }
 
-if ($?) {
-    exit 0
-}
+# ────────────────────────────────────────────────────────────
+# 回傳任務執行結果
+# ────────────────────────────────────────────────────────────
 
-exit 1
+exit $taskExitCode

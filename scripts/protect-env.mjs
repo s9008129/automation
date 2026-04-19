@@ -85,13 +85,20 @@ function loadKeyFile(dir) {
   const keyPath = path.join(dir, KEY_FILE_NAME);
   if (!fs.existsSync(keyPath)) return null;
   const keyHex = fs.readFileSync(keyPath, 'utf8').trim();
-  if (keyHex.length !== KEY_LENGTH * 2) {
+  if (!/^[0-9a-fA-F]+$/.test(keyHex)) {
     throw new Error(
-      `金鑰檔案格式不正確：${keyPath}\n` +
-      `預期 ${KEY_LENGTH * 2} 個 hex 字元，實際 ${keyHex.length} 個。`
+      `金鑰檔案含有非法字元：${keyPath}\n` +
+      `金鑰必須為純 hex 字元（0-9, a-f）。`
     );
   }
-  return Buffer.from(keyHex, 'hex');
+  const keyBuf = Buffer.from(keyHex, 'hex');
+  if (keyBuf.length !== KEY_LENGTH) {
+    throw new Error(
+      `金鑰檔案格式不正確：${keyPath}\n` +
+      `預期 ${KEY_LENGTH} bytes（${KEY_LENGTH * 2} 個 hex 字元），實際 ${keyBuf.length} bytes。`
+    );
+  }
+  return keyBuf;
 }
 
 function getOrCreateKeyFile(dir) {
@@ -163,7 +170,9 @@ function doEncrypt(projectRoot) {
     // 跳過空值
     if (entry.val.length === 0) continue;
     entry.val = encryptValue(entry.val, key);
-    entry.quoted = ''; // 加密後不需要引號包裝
+    // 加密後的 ENC(...) 值不需要引號包裝；保留原始 quoted 標記供解密後還原
+    entry.quotedOriginal = entry.quoted;
+    entry.quoted = '';
     encCount++;
   }
 
@@ -208,8 +217,14 @@ function doDecrypt(projectRoot) {
     if (entry.type !== 'kv') continue;
     if (!isEncrypted(entry.val)) continue;
     try {
-      entry.val = decryptValue(entry.val, key);
-      entry.quoted = '';
+      const decrypted = decryptValue(entry.val, key);
+      entry.val = decrypted;
+      // 若解密後的值含前後空白，自動加上雙引號保護語意
+      if (decrypted.length > 0 && (decrypted.startsWith(' ') || decrypted.endsWith(' '))) {
+        entry.quoted = '"';
+      } else {
+        entry.quoted = '';
+      }
       decCount++;
     } catch (err) {
       console.error(`❌ 解密 ${entry.key} 失敗：${err.message}`);
@@ -321,7 +336,6 @@ function doRotateKey(projectRoot) {
     if (!isEncrypted(entry.val)) continue;
     try {
       entry.val = decryptValue(entry.val, oldKey);
-      entry.quoted = '';
     } catch (err) {
       console.error(`❌ 用舊金鑰解密 ${entry.key} 失敗：${err.message}`);
       process.exit(1);

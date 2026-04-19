@@ -62,14 +62,22 @@ export function loadKeyFile(dir: string): Buffer | null {
     return null
   }
   const keyHex = fs.readFileSync(keyPath, 'utf8').trim()
-  if (keyHex.length !== KEY_LENGTH * 2) {
+  if (!/^[0-9a-fA-F]+$/.test(keyHex)) {
     throw new Error(
-      `❌ 金鑰檔案格式不正確：${keyPath}\n` +
-        `預期 ${KEY_LENGTH * 2} 個 hex 字元，實際 ${keyHex.length} 個。\n` +
+      `❌ 金鑰檔案含有非法字元：${keyPath}\n` +
+        `金鑰必須為純 hex 字元（0-9, a-f）。\n` +
         `請刪除此檔案後重新執行 .\\protect-env.ps1 產生新金鑰。`
     )
   }
-  return Buffer.from(keyHex, 'hex')
+  const keyBuf = Buffer.from(keyHex, 'hex')
+  if (keyBuf.length !== KEY_LENGTH) {
+    throw new Error(
+      `❌ 金鑰檔案格式不正確：${keyPath}\n` +
+        `預期 ${KEY_LENGTH} bytes（${KEY_LENGTH * 2} 個 hex 字元），實際 ${keyBuf.length} bytes。\n` +
+        `請刪除此檔案後重新執行 .\\protect-env.ps1 產生新金鑰。`
+    )
+  }
+  return keyBuf
 }
 
 /**
