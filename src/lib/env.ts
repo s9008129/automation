@@ -44,11 +44,16 @@ export function loadDotEnv(customEnvPath?: string): string | null {
     // 嘗試載入同目錄下的金鑰檔案（若存在）
     const envDir = path.dirname(envPath);
     let encKey: Buffer | null = null;
+    let keyLoadError: Error | null = null;
     try {
       encKey = loadKeyFile(envDir);
-    } catch {
-      // 金鑰檔案損壞時會拋出錯誤，這裡先靜默處理
-      // 若後續遇到 ENC(...) 值，tryDecrypt 會拋出明確錯誤
+    } catch (error) {
+      // 保留原始金鑰載入錯誤；只有在實際遇到 ENC(...) 值時才優先拋出，
+      // 讓未加密的 .env 仍可正常使用，同時避免把「金鑰格式錯誤」誤導成「找不到 .env.key」。
+      keyLoadError =
+        error instanceof Error
+          ? error
+          : new Error(`載入 .env.key 時發生未知錯誤：${String(error)}`);
     }
 
     const content = fs.readFileSync(envPath, 'utf8');
@@ -68,6 +73,9 @@ export function loadDotEnv(customEnvPath?: string): string | null {
 
       // 🔐 若值為加密格式，透明解密
       if (isEncrypted(val)) {
+        if (keyLoadError) {
+          throw keyLoadError;
+        }
         val = tryDecrypt(val, encKey);
       }
 
